@@ -1,0 +1,6 @@
+{
+  "hello.default": "Witaj z {{App}}.",
+  "hello.named_suffix": "Miło Cię widzieć, {{Name}}.",
+  "hello.auth_suffix": "Jesteś zalogowany jako {{IdentityID}}.",
+  "health.status": "ok"
+}

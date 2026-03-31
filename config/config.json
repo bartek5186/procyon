@@ -1,0 +1,20 @@
+{
+  "app_name": "Procyon",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8081
+  },
+  "auth_domain": "http://127.0.0.1:4433",
+  "languages": ["pl", "en"],
+  "domains": [
+    "http://localhost:8081",
+    "http://127.0.0.1:8081"
+  ],
+  "database": {
+    "host": "127.0.0.1",
+    "user": "root",
+    "password": "root",
+    "dbname": "procyon",
+    "port": 3306
+  }
+}

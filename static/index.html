@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Procyon</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --fg: #1f2430;
+      --accent: #0e8a6a;
+      --card: #fffdf8;
+      --border: #d9d0c3;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at top left, rgba(14,138,106,0.16), transparent 30%),
+        linear-gradient(180deg, #f7f2ea 0%, var(--bg) 100%);
+      color: var(--fg);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    main {
+      width: min(720px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 40px 32px;
+      box-shadow: 0 20px 60px rgba(31, 36, 48, 0.08);
+    }
+    h1 {
+      font-size: clamp(2.4rem, 7vw, 4.5rem);
+      margin: 0 0 12px;
+      line-height: 0.95;
+    }
+    p {
+      font-size: 1.05rem;
+      line-height: 1.6;
+      margin: 0 0 16px;
+    }
+    code {
+      background: #efe7db;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+    a {
+      text-decoration: none;
+      color: white;
+      background: var(--accent);
+      padding: 12px 16px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p>Base backend template</p>
+    <h1>HelloWorld<br>from Procyon</h1>
+    <p>To jest minimalny template backendu z warstwami <code>controller -> service -> store</code>, i18n, loggerem, konfiguracją oraz middleware dla języka i auth.</p>
+    <div class="links">
+      <a href="/health">GET /health</a>
+      <a href="/hello">GET /hello</a>
+    </div>
+  </main>
+</body>
+</html>
