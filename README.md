@@ -1,13 +1,13 @@
 # Procyon
 
-`Procyon` to bazowy template backendu w oparciu o Echo
+`Procyon` is a base backend template built on top of Echo.
 
-Cel:
-- zachować ten sam układ warstw,
-- dać minimalny starter do nowych backendów,
-- mieć gotowe elementy wspólne: `config`, `logger`, `i18n`, `middleware`, przykładowy `controller/service/store`.
+Goals:
+- keep the same layered structure,
+- provide a minimal starter for new backends,
+- include ready-to-use shared pieces: `config`, `logger`, `i18n`, `middleware`, and an example `controller/service/store`.
 
-## Struktura
+## Structure
 
 ```text
 config/
@@ -20,37 +20,37 @@ store/
 main.go
 ```
 
-## Co jest gotowe
+## What's included
 
-- `internal/config.go` z ładowaniem konfiguracji i połączeniem MySQL
-- `internal/logger.go` z loggerem JSON do pliku i stdout
+- `internal/config.go` with configuration loading and MySQL connection setup
+- `internal/logger.go` with a JSON logger writing to both file and stdout
 - `internal/validator.go`
 - `internal/middleware/language.go`
-- `internal/middleware/auth.go` z auth opartym o ORY Kratos
-- `internal/i18n/` z prostym loaderem tłumaczeń
-- `models.HelloMessage` jako przykładowy model
+- `internal/middleware/auth.go` with auth based on ORY Kratos
+- `internal/i18n/` with a simple translation loader
+- `models.HelloMessage` as an example model
 - `HelloController`, `HelloService`, `HelloStore`
 - `static/index.html`
 
-## Uruchomienie
+## Running
 
 ```bash
 cd base
 go run . -migrate=true
 ```
 
-Domyślnie aplikacja czyta konfigurację z `config/config.json`.
+By default, the application reads configuration from `config/config.json`.
 
-## Endpointy
+## Endpoints
 
 - `GET /health`
 - `GET /hello`
-- `GET /v1/hello` - endpoint zabezpieczony przez Kratos session auth
+- `GET /v1/hello` - endpoint protected by Kratos session auth
 
-## Co podmienić w nowym projekcie
+## What to replace in a new project
 
-1. `app_name` i moduł w `go.mod`
-2. modele domenowe
-3. przykładowy `hello` feature
-4. konfigurację DB i auth
-5. statyczną stronę startową
+1. `app_name` and the module name in `go.mod`
+2. domain models
+3. the example `hello` feature
+4. DB and auth configuration
+5. the static landing page
