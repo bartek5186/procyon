@@ -8,16 +8,15 @@ import (
 	"github.com/bartek5186/procyon/models"
 	"github.com/bartek5186/procyon/services"
 	"github.com/labstack/echo/v4"
-	ory "github.com/ory/client-go"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type HelloController struct {
 	appService *services.AppService
-	logger     *logrus.Logger
+	logger     *zap.Logger
 }
 
-func NewHelloController(appService *services.AppService, logger *logrus.Logger) *HelloController {
+func NewHelloController(appService *services.AppService, logger *zap.Logger) *HelloController {
 	return &HelloController{
 		appService: appService,
 		logger:     logger,
@@ -42,7 +41,7 @@ func (c *HelloController) Hello(ec echo.Context) error {
 
 	out, err := c.appService.Hello.Greet(ctx, in, "")
 	if err != nil {
-		c.logger.WithError(err).Error("Hello")
+		c.logger.Error("hello request failed", zap.Error(err))
 		return ec.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -50,24 +49,53 @@ func (c *HelloController) Hello(ec echo.Context) error {
 }
 
 func (c *HelloController) HelloAuthenticated(ec echo.Context) error {
+	out, err := c.greetAuthenticated(ec)
+	if err != nil {
+		return err
+	}
+
+	return ec.JSON(http.StatusOK, out)
+}
+
+func (c *HelloController) HelloAdmin(ec echo.Context) error {
+	out, err := c.greetAuthenticated(ec)
+	if err != nil {
+		return err
+	}
+
+	return ec.JSON(http.StatusOK, map[string]any{
+		"scope": "hello:manage",
+		"data":  out,
+	})
+}
+
+func (c *HelloController) greetAuthenticated(ec echo.Context) (*models.HelloResponse, error) {
 	ctx := c.withLanguage(ec)
 
 	var in models.HelloInput
 	if err := ec.Bind(&in); err != nil {
-		return ec.JSON(http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+		return nil, ec.JSON(http.StatusBadRequest, map[string]string{"error": "invalid payload"})
 	}
 	if err := ec.Validate(&in); err != nil {
-		return ec.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, ec.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	sess := ec.Get(middleware.ContextKeySession).(*ory.Session)
+	sess, ok := middleware.SessionFromContext(ec)
+	if !ok || sess == nil {
+		return nil, ec.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+	}
+
 	out, err := c.appService.Hello.Greet(ctx, in, sess.Identity.Id)
 	if err != nil {
-		c.logger.WithError(err).Error("HelloAuthenticated")
-		return ec.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		c.logger.Error("authenticated hello request failed", zap.Error(err))
+		return nil, ec.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	return ec.JSON(http.StatusOK, out)
+	if role, ok := middleware.RoleFromContext(ec); ok {
+		out.Role = role
+	}
+
+	return out, nil
 }
 
 func (c *HelloController) withLanguage(ec echo.Context) context.Context {

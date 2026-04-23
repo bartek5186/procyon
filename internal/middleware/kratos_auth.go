@@ -25,24 +25,25 @@ var kratosHTTP = &http.Client{
 	Timeout: 2 * time.Second,
 }
 
-// Auth jest neutralnie nazwaną wersją middleware opartego o ORY Kratos session auth.
-type Auth struct {
+type KratosAuth struct {
 	publicBaseURL string
 	httpClient    *http.Client
 }
 
-func NewAuth(kratosPublicURL string) *Auth {
-	return &Auth{
+func NewKratosAuth(kratosPublicURL string) *KratosAuth {
+	return &KratosAuth{
 		publicBaseURL: strings.TrimRight(kratosPublicURL, "/"),
 		httpClient:    kratosHTTP,
 	}
 }
 
-func (a *Auth) RequireSession(next echo.HandlerFunc) echo.HandlerFunc {
+func (a *KratosAuth) RequireSession(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		httpReq, _ := http.NewRequest(http.MethodGet, a.publicBaseURL+"/sessions/whoami", nil)
-
 		req := c.Request()
+		httpReq, err := http.NewRequestWithContext(req.Context(), http.MethodGet, a.publicBaseURL+"/sessions/whoami", nil)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+		}
 
 		if tok := req.Header.Get("X-Session-Token"); tok != "" {
 			httpReq.Header.Set("X-Session-Token", tok)
@@ -57,16 +58,21 @@ func (a *Auth) RequireSession(next echo.HandlerFunc) echo.HandlerFunc {
 			if resp != nil {
 				resp.Body.Close()
 			}
-			return c.NoContent(http.StatusUnauthorized)
+			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 		}
 		defer resp.Body.Close()
 
 		var session ory.Session
 		if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
-			return c.NoContent(http.StatusUnauthorized)
+			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 		}
 
 		c.Set(ContextKeySession, &session)
 		return next(c)
 	}
+}
+
+func SessionFromContext(c echo.Context) (*ory.Session, bool) {
+	session, ok := c.Get(ContextKeySession).(*ory.Session)
+	return session, ok
 }

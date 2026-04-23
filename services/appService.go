@@ -2,16 +2,16 @@ package services
 
 import (
 	"github.com/bartek5186/procyon/store"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type AppService struct {
 	Store  store.Datastore
 	Hello  *HelloService
-	logger *logrus.Logger
+	logger *zap.Logger
 }
 
-func NewAppService(store store.Datastore, logger *logrus.Logger) *AppService {
+func NewAppService(store store.Datastore, logger *zap.Logger) *AppService {
 	return &AppService{
 		Store:  store,
 		Hello:  NewHelloService(store, logger),

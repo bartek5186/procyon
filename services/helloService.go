@@ -9,16 +9,16 @@ import (
 	"github.com/bartek5186/procyon/internal/middleware"
 	"github.com/bartek5186/procyon/models"
 	"github.com/bartek5186/procyon/store"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type HelloService struct {
 	Store  store.Datastore
-	logger *logrus.Logger
+	logger *zap.Logger
 }
 
-func NewHelloService(store store.Datastore, logger *logrus.Logger) *HelloService {
+func NewHelloService(store store.Datastore, logger *zap.Logger) *HelloService {
 	return &HelloService{
 		Store:  store,
 		logger: logger,

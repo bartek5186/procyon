@@ -5,7 +5,7 @@
     "host": "0.0.0.0",
     "port": 8081
   },
-  "auth_domain": "http://127.0.0.1:4433",
+  "auth_domain": "http://host.docker.internal:4433",
   "languages": ["pl", "en"],
   "domains": [
     "http://localhost:8081",
@@ -16,6 +16,7 @@
   },
   "observability": {
     "service_name": "procyon",
+    "service_version": "dev",
     "environment": "dev",
     "namespace": "procyon",
     "metrics_path": "/metrics",
@@ -35,7 +36,7 @@
     "file_dir": "log"
   },
   "database": {
-    "host": "127.0.0.1",
+    "host": "mysql",
     "user": "root",
     "password": "root",
     "dbname": "procyon",

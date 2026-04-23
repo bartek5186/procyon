@@ -1,0 +1,8 @@
+.git
+.gocache
+.gomodcache
+build/*
+!build/procyon-server
+log
+tmp
+config/config.json

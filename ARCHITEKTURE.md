@@ -112,7 +112,7 @@ Serwis nie powinien:
 - trzymać logiki SQL.
 
 Akceptowalny styl w tym repo:
-- serwis ma pola `Store store.Datastore` i `logger *logrus.Logger`,
+- serwis ma pola `Store store.Datastore` i `logger *zap.Logger`,
 - logika jest pragmatyczna, bez przesadnego rozbijania na małe interfejsy,
 - integracje zewnętrzne są również w `services/`, np. Stripe, Apple, Google, FCM, upload.
 
@@ -256,14 +256,18 @@ Nie wypychaj do kontrolera skomplikowanego składania odpowiedzi z wielu relacji
 
 Są dwa główne tryby:
 
-- mobile/user auth przez ORY Kratos w `internal/middleware/mobile_auth.go`,
-- admin auth przez secret key w `internal/middleware/admin_wp_auth.go`.
+- user auth przez ORY Kratos w `internal/middleware/kratos_auth.go`,
+- authz przez Casbin w `internal/authz/` i `internal/middleware/casbin_authz.go`,
+- admin/internal auth przez secret key w `internal/middleware/admin_key_auth.go`.
 
 Kontroler może odczytać sesję przez:
 
 ```go
-sess := c.Get("kratosSession").(*ory.Session)
+sess, ok := middleware.SessionFromContext(c)
 ```
+
+Rola do RBAC jest rozwiązywana z Kratos `identity.metadata_public.role` albo `identity.traits.role`.
+Jeśli nie ma jawnej roli, template traktuje użytkownika jako `user`.
 
 ### Language
 

@@ -1,2 +1,5 @@
 .gocache/
+.gomodcache/
+.env
+build/
 log/

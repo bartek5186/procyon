@@ -16,6 +16,7 @@
   },
   "observability": {
     "service_name": "procyon",
+    "service_version": "dev",
     "environment": "dev",
     "namespace": "procyon",
     "metrics_path": "/metrics",
