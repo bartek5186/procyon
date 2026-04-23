@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -53,12 +54,15 @@ type Config struct {
 		Port int    `json:"port"`
 	} `json:"server"`
 	Database struct {
+		Driver   string `json:"driver"`
 		Host     string `json:"host"`
 		User     string `json:"user"`
 		Password string `json:"password"`
 		DbName   string `json:"dbname"`
 		Port     int    `json:"port"`
 		Charset  string `json:"charset"`
+		SSLMode  string `json:"sslmode"`
+		TimeZone string `json:"timezone"`
 	} `json:"database"`
 	Observability ObservabilityConfig `json:"observability"`
 	Logging       LoggingConfig       `json:"logging"`
@@ -154,26 +158,68 @@ func (cfg LoggingConfig) WithDefaults() LoggingConfig {
 }
 
 func NewDatabaseConnection(cfg Config) *gorm.DB {
-	loc := url.QueryEscape("UTC")
-	tz := url.QueryEscape("'+00:00'")
-	charset := strings.TrimSpace(cfg.Database.Charset)
-	if charset == "" {
-		charset = "utf8mb4"
+	driver := strings.ToLower(strings.TrimSpace(cfg.Database.Driver))
+	if driver == "" {
+		driver = "mysql"
 	}
 
-	connStr := fmt.Sprintf(
-		"%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=true&loc=%s&time_zone=%s",
-		cfg.Database.User,
-		cfg.Database.Password,
-		cfg.Database.Host,
-		cfg.Database.Port,
-		cfg.Database.DbName,
-		charset,
-		loc,
-		tz,
-	)
+	var dialector gorm.Dialector
+	switch driver {
+	case "mysql":
+		charset := strings.TrimSpace(cfg.Database.Charset)
+		if charset == "" {
+			charset = "utf8mb4"
+		}
 
-	db, err := gorm.Open(mysql.Open(connStr), &gorm.Config{PrepareStmt: true})
+		timeZone := strings.TrimSpace(cfg.Database.TimeZone)
+		if timeZone == "" {
+			timeZone = "UTC"
+		}
+		timeZoneLoc := url.QueryEscape(timeZone)
+		timeZoneSetting := url.QueryEscape("'+00:00'")
+		if !strings.EqualFold(timeZone, "UTC") {
+			timeZoneSetting = url.QueryEscape("'" + timeZone + "'")
+		}
+
+		connStr := fmt.Sprintf(
+			"%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=true&loc=%s&time_zone=%s",
+			cfg.Database.User,
+			cfg.Database.Password,
+			cfg.Database.Host,
+			cfg.Database.Port,
+			cfg.Database.DbName,
+			charset,
+			timeZoneLoc,
+			timeZoneSetting,
+		)
+		dialector = mysql.Open(connStr)
+	case "postgres", "postgresql":
+		sslMode := strings.TrimSpace(cfg.Database.SSLMode)
+		if sslMode == "" {
+			sslMode = "disable"
+		}
+
+		timeZone := strings.TrimSpace(cfg.Database.TimeZone)
+		if timeZone == "" {
+			timeZone = "UTC"
+		}
+
+		connStr := fmt.Sprintf(
+			"host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
+			cfg.Database.Host,
+			cfg.Database.User,
+			cfg.Database.Password,
+			cfg.Database.DbName,
+			cfg.Database.Port,
+			sslMode,
+			timeZone,
+		)
+		dialector = postgres.Open(connStr)
+	default:
+		configLogger.Fatal("unsupported database driver", zap.String("driver", driver))
+	}
+
+	db, err := gorm.Open(dialector, &gorm.Config{PrepareStmt: true})
 	if err != nil {
 		configLogger.Fatal("unable to connect to database", zap.Error(err))
 	}

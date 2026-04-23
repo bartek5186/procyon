@@ -22,7 +22,7 @@ main.go
 
 ## What's included
 
-- `internal/config.go` with configuration loading and MySQL connection setup
+- `internal/config.go` with configuration loading and MySQL/PostgreSQL connection setup
 - `internal/logger.go` with `zap` JSON logging to stdout and optional daily files
 - `internal/telemetry/` with OpenTelemetry traces, OpenMetrics, health/readiness/info handlers and HTTP request logging
 - `internal/authz/` with Casbin model, default policies and role helpers
@@ -35,7 +35,8 @@ main.go
 - `models.HelloMessage` as an example model
 - `HelloController`, `HelloService`, `HelloStore`
 - `static/index.html`
-- `config/config.example.json`
+- `config/config.example.json` for MySQL
+- `config/config.postgres.example.json` for PostgreSQL
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
 
@@ -47,11 +48,14 @@ go run . -migrate=true
 ```
 
 By default, the application reads configuration from `config/config.json`.
-Use `config/config.example.json` as the starting point for a new service.
+Use:
+- `config/config.example.json` for MySQL
+- `config/config.postgres.example.json` for PostgreSQL
 
 ## Docker
 
 Local Docker runtime uses `config/config.docker.json`.
+This example compose is the MySQL variant.
 
 ```bash
 ./deploy.sh

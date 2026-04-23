@@ -36,11 +36,13 @@
     "file_dir": "log"
   },
   "database": {
+    "driver": "mysql",
     "host": "mysql",
     "user": "root",
     "password": "root",
     "dbname": "procyon",
     "port": 3306,
-    "charset": "utf8mb4"
+    "charset": "utf8mb4",
+    "timezone": "UTC"
   }
 }

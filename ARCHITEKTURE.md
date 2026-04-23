@@ -4,7 +4,7 @@ Ten dokument opisuje faktyczny styl architektury używany w tym repo i ma służ
 
 To nie jest czysta architektura heksagonalna ani DDD. To praktyczna architektura warstwowa inspirowana heksagonalnym podziałem odpowiedzialności:
 
-`HTTP/Echo -> controllers -> services -> store -> MySQL/GORM`
+`HTTP/Echo -> controllers -> services -> store -> SQL/GORM`
 
 Do tego dochodzą:
 - `models` jako wspólne struktury domenowe, DTO i mapery,

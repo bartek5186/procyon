@@ -36,13 +36,13 @@
     "file_dir": "log"
   },
   "database": {
-    "driver": "mysql",
+    "driver": "postgres",
     "host": "127.0.0.1",
-    "user": "root",
-    "password": "root",
+    "user": "postgres",
+    "password": "postgres",
     "dbname": "procyon",
-    "port": 3306,
-    "charset": "utf8mb4",
+    "port": 5432,
+    "sslmode": "disable",
     "timezone": "UTC"
   }
 }

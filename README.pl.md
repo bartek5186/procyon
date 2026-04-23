@@ -22,7 +22,7 @@ main.go
 
 ## Co jest gotowe
 
-- `internal/config.go` z ładowaniem konfiguracji i połączeniem MySQL
+- `internal/config.go` z ładowaniem konfiguracji i połączeniem MySQL/PostgreSQL
 - `internal/logger.go` z `zap`, JSON na stdout i opcjonalnym zapisem do pliku
 - `internal/telemetry/` z OpenTelemetry, OpenMetrics, health/readiness/info i logami requestów HTTP
 - `internal/authz/` z Casbinem, domyślnym modelem polityk i helperami ról
@@ -35,7 +35,8 @@ main.go
 - `models.HelloMessage` jako przykładowy model
 - `HelloController`, `HelloService`, `HelloStore`
 - `static/index.html`
-- `config/config.example.json`
+- `config/config.example.json` dla MySQL
+- `config/config.postgres.example.json` dla PostgreSQL
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
 
@@ -47,11 +48,14 @@ go run . -migrate=true
 ```
 
 Domyślnie aplikacja czyta konfigurację z `config/config.json`.
-Punkt startowy dla nowego serwisu to `config/config.example.json`.
+Punkt startowy dla nowego serwisu:
+- `config/config.example.json` dla MySQL
+- `config/config.postgres.example.json` dla PostgreSQL
 
 ## Docker
 
 Lokalny runtime Dockerowy używa `config/config.docker.json`.
+Ten przykładowy compose jest wariantem mysqlowym.
 
 ```bash
 ./deploy.sh
