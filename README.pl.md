@@ -39,7 +39,7 @@ main.go
 - `config/config.postgres.example.json` dla PostgreSQL
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
-- lekkie wersjonowane migracje SQL w `internal/migrations/`
+- migracje SQL przez `goose` w `internal/migrations/`
 - `scripts/generate-feature.sh` jako generator szkieletu modułu
 
 ## Uruchomienie
@@ -89,11 +89,11 @@ Zasady:
 
 ## Migracje
 
-Domyślnie `-migrate=true` uruchamia lekkie wersjonowane migracje SQL z:
+Domyślnie `-migrate=true` uruchamia wersjonowane migracje SQL przez `goose` z:
 - `internal/migrations/mysql/`
 - `internal/migrations/postgres/`
 
-Wykonane migracje są zapisywane w tabeli `schema_migrations`. Nazwę tabeli można zmienić przez `database.migrations_table`.
+Wykonane migracje są zapisywane w tabeli `schema_migrations`. Nazwę tabeli można zmienić przez `database.migrations_table`, a katalog przez `database.migrations_dir`.
 Dla szybkich prototypów można wrócić do GORM `AutoMigrate`:
 
 ```json
@@ -103,6 +103,8 @@ Dla szybkich prototypów można wrócić do GORM `AutoMigrate`:
   }
 }
 ```
+
+`AutoMigrate` nie jest "złe" dlatego, że kasuje dane. GORM zwykle nie usuwa kolumn ani tabel automatycznie. Problem jest inny: nie masz jawnej, wersjonowanej historii zmian schematu, rollbacków, statusu środowiska ani kontroli nad trudnymi zmianami typu rename kolumny, backfill, split tabeli, indeksy tworzone osobno, zmiany constraintów. Dlatego w produkcyjnej ścieżce template używa `goose`, a `AutoMigrate` zostaje jako szybki tryb prototypowy.
 
 ## Generator Modułu
 

@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS hello_messages (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   created_at DATETIME(3) NULL,
@@ -11,3 +12,6 @@ CREATE TABLE IF NOT EXISTS hello_messages (
   KEY idx_hello_messages_deleted_at (deleted_at),
   KEY idx_hello_messages_lang (lang)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- +goose Down
+DROP TABLE IF EXISTS hello_messages;

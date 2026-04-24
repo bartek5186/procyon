@@ -4,11 +4,10 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	"io/fs"
-	"sort"
 	"strings"
 
 	"github.com/bartek5186/procyon/models"
+	"github.com/pressly/goose/v3"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -17,41 +16,38 @@ import (
 var migrationFiles embed.FS
 
 func MigrateRun(db *gorm.DB, cfg Config) error {
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		if cfg.Database.DisableVersionedMigrations {
+	if cfg.Database.DisableVersionedMigrations {
+		if err := db.Transaction(func(tx *gorm.DB) error {
 			if err := runAutoMigrate(tx); err != nil {
 				return err
 			}
-		} else if err := runVersionedMigrations(tx, cfg); err != nil {
-			return err
+			return seedHelloMessages(context.Background(), tx)
+		}); err != nil {
+			return fmt.Errorf("migrate: %w", err)
 		}
+		return nil
+	}
 
-		return seedHelloMessages(context.Background(), tx)
-	}); err != nil {
+	if err := runGooseMigrations(db, cfg); err != nil {
 		return fmt.Errorf("migrate: %w", err)
+	}
+
+	if err := seedHelloMessages(context.Background(), db); err != nil {
+		return fmt.Errorf("seed hello messages: %w", err)
 	}
 
 	return nil
 }
 
-func runAutoMigrate(tx *gorm.DB) error {
-	tx = tx.Set("gorm:table_options", "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
-
-	return tx.AutoMigrate(
-		&models.HelloMessage{},
-	)
-}
-
-func runVersionedMigrations(tx *gorm.DB, cfg Config) error {
-	driver := strings.ToLower(strings.TrimSpace(cfg.Database.Driver))
-	if driver == "" {
-		driver = "mysql"
+func runGooseMigrations(db *gorm.DB, cfg Config) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
 	}
-	if driver == "postgresql" {
-		driver = "postgres"
-	}
-	if driver != "mysql" && driver != "postgres" {
-		return fmt.Errorf("unsupported migration driver %q", driver)
+
+	driver := migrationDriver(cfg)
+	if err := goose.SetDialect(driver); err != nil {
+		return err
 	}
 
 	table := strings.TrimSpace(cfg.Database.MigrationsTable)
@@ -61,106 +57,29 @@ func runVersionedMigrations(tx *gorm.DB, cfg Config) error {
 	if !isSafeSQLIdentifier(table) {
 		return fmt.Errorf("invalid migrations table name %q", table)
 	}
+	goose.SetTableName(table)
 
-	if err := ensureMigrationsTable(tx, driver, table); err != nil {
-		return err
+	dir := strings.TrimSpace(cfg.Database.MigrationsDir)
+	if dir == "" {
+		dir = "migrations/" + driver
 	}
 
-	applied, err := appliedMigrations(tx, table)
-	if err != nil {
-		return err
-	}
+	goose.SetBaseFS(migrationFiles)
+	defer goose.SetBaseFS(nil)
 
-	dir := "migrations/" + driver
-	entries, err := fs.ReadDir(migrationFiles, dir)
-	if err != nil {
-		return err
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
-	})
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-		version := strings.TrimSuffix(entry.Name(), ".sql")
-		if applied[version] {
-			continue
-		}
-
-		raw, err := migrationFiles.ReadFile(dir + "/" + entry.Name())
-		if err != nil {
-			return err
-		}
-		if err := execSQLStatements(tx, string(raw)); err != nil {
-			return fmt.Errorf("migration %s: %w", entry.Name(), err)
-		}
-		if err := tx.Exec(fmt.Sprintf("INSERT INTO %s (version) VALUES (?)", table), version).Error; err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return goose.Up(sqlDB, dir)
 }
 
-func ensureMigrationsTable(tx *gorm.DB, driver, table string) error {
-	var statement string
+func migrationDriver(cfg Config) string {
+	driver := strings.ToLower(strings.TrimSpace(cfg.Database.Driver))
 	switch driver {
-	case "mysql":
-		statement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			version VARCHAR(255) NOT NULL PRIMARY KEY,
-			applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, table)
-	case "postgres":
-		statement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			version TEXT NOT NULL PRIMARY KEY,
-			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`, table)
+	case "", "mysql":
+		return "mysql"
+	case "postgresql", "postgres":
+		return "postgres"
 	default:
-		return fmt.Errorf("unsupported migration driver %q", driver)
+		return driver
 	}
-
-	return tx.Exec(statement).Error
-}
-
-func appliedMigrations(tx *gorm.DB, table string) (map[string]bool, error) {
-	type row struct {
-		Version string
-	}
-
-	var rows []row
-	if err := tx.Raw(fmt.Sprintf("SELECT version FROM %s", table)).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-
-	out := make(map[string]bool, len(rows))
-	for _, row := range rows {
-		out[row.Version] = true
-	}
-	return out, nil
-}
-
-func execSQLStatements(tx *gorm.DB, raw string) error {
-	lines := strings.Split(raw, "\n")
-	cleaned := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "--") {
-			continue
-		}
-		cleaned = append(cleaned, line)
-	}
-
-	for _, stmt := range strings.Split(strings.Join(cleaned, "\n"), ";") {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-		if err := tx.Exec(stmt).Error; err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func isSafeSQLIdentifier(value string) bool {
@@ -177,6 +96,14 @@ func isSafeSQLIdentifier(value string) bool {
 		return false
 	}
 	return true
+}
+
+func runAutoMigrate(tx *gorm.DB) error {
+	tx = tx.Set("gorm:table_options", "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
+
+	return tx.AutoMigrate(
+		&models.HelloMessage{},
+	)
 }
 
 func seedHelloMessages(ctx context.Context, db *gorm.DB) error {

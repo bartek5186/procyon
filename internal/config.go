@@ -69,6 +69,7 @@ type DatabaseConfig struct {
 	MaxIdleConns               int    `json:"max_idle_conns"`
 	ConnMaxLifetimeSeconds     int    `json:"conn_max_lifetime_seconds"`
 	ConnMaxIdleTimeSeconds     int    `json:"conn_max_idle_time_seconds"`
+	MigrationsDir              string `json:"migrations_dir"`
 	MigrationsTable            string `json:"migrations_table"`
 	DisableVersionedMigrations bool   `json:"disable_versioned_migrations"`
 }
@@ -140,6 +141,7 @@ func (c *Config) ApplyEnv() {
 	setIntFromEnv(&c.Database.MaxIdleConns, "DB_MAX_IDLE_CONNS")
 	setIntFromEnv(&c.Database.ConnMaxLifetimeSeconds, "DB_CONN_MAX_LIFETIME_SECONDS")
 	setIntFromEnv(&c.Database.ConnMaxIdleTimeSeconds, "DB_CONN_MAX_IDLE_TIME_SECONDS")
+	setStringFromEnv(&c.Database.MigrationsDir, "DB_MIGRATIONS_DIR")
 	setStringFromEnv(&c.Database.MigrationsTable, "DB_MIGRATIONS_TABLE")
 	setBoolFromEnv(&c.Database.DisableVersionedMigrations, "DB_DISABLE_VERSIONED_MIGRATIONS")
 

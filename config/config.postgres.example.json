@@ -57,6 +57,7 @@
     "max_idle_conns": 10,
     "conn_max_lifetime_seconds": 1800,
     "conn_max_idle_time_seconds": 300,
+    "migrations_dir": "migrations/postgres",
     "migrations_table": "schema_migrations",
     "disable_versioned_migrations": false
   }

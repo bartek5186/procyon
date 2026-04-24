@@ -372,7 +372,9 @@ Jeśli tworzysz nowy feature, wykonuj go w tej kolejności:
 9. Jeśli zmieniasz schemat danych, dopisz model i migrację.
 10. Jeśli feature ma efekt uboczny async, umieść go w `services`, nie w kontrolerze.
 
-Jeśli feature dodaje tabelę, preferuj wersjonowaną migrację SQL w `internal/migrations/<driver>/`. `AutoMigrate` jest zostawione tylko jako lekki tryb prototypowy przez `database.disable_versioned_migrations=true`.
+Jeśli feature dodaje tabelę, preferuj migrację SQL `goose` w `internal/migrations/<driver>/`. `AutoMigrate` jest zostawione tylko jako lekki tryb prototypowy przez `database.disable_versioned_migrations=true`.
+
+Nie traktuj `AutoMigrate` jako produkcyjnego systemu migracji. Główny problem nie polega na tym, że usuwa dane, tylko na braku jawnej historii zmian, rollbacków, statusu wersji schematu i kontroli nad zmianami wymagającymi ręcznego SQL.
 
 ## 14. Czego AI nie powinno robić
 
