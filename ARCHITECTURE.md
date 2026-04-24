@@ -11,6 +11,7 @@ Do tego dochodzą:
 - `internal` jako kod infrastrukturalny i cross-cutting,
 - background jobs uruchamiane przy starcie aplikacji,
 - integracje zewnętrzne trzymane w `services`.
+- opcjonalne moduły infrastrukturalne sterowane konfiguracją: auth, RBAC i admin endpoints.
 
 ## 1. Główna zasada
 
@@ -44,15 +45,18 @@ main.go        composition root: składanie aplikacji, routing, middleware, star
 Przy starcie aplikacja robi w tej kolejności:
 
 1. ładuje translacje i konfigurację,
-2. tworzy logger,
-3. otwiera połączenie z DB,
-4. buduje `AppStore`,
-5. inicjalizuje providerów płatności, jeśli są włączone,
-6. buduje `AppService`,
-7. uruchamia background jobs i consumerów,
-8. tworzy kontrolery,
-9. zakłada middleware,
-10. rejestruje trasy.
+2. nakłada override'y z env i waliduje konfigurację,
+3. tworzy logger,
+4. otwiera połączenie z DB i ustawia pool,
+5. inicjalizuje opcjonalne moduły, np. Casbin tylko gdy `rbac.enabled=true`,
+6. uruchamia migracje, jeśli proces dostał `-migrate=true`,
+7. buduje `AppStore`,
+8. inicjalizuje providerów płatności, jeśli są włączone,
+9. buduje `AppService`,
+10. uruchamia background jobs i consumerów,
+11. tworzy kontrolery,
+12. zakłada middleware,
+13. rejestruje trasy zależnie od przełączników modułów.
 
 W tym projekcie nie ma kontenera DI. Zależności są przekazywane ręcznie przez konstruktory albo przypisywane podczas tworzenia `AppService`.
 
@@ -180,6 +184,14 @@ Jeśli dodajesz nowy moduł:
 
 Nie buduj osobnego kontenera ani kolejnej warstwy abstrakcji bez wyraźnej potrzeby.
 
+Do wygenerowania początkowego szkieletu modułu można użyć:
+
+```bash
+scripts/generate-feature.sh invoice
+```
+
+Generator tworzy pliki modeli, store, service i controller, ale celowo nie edytuje automatycznie `AppStore`, `AppService`, `main.go` ani migracji. Te miejsca są composition rootem i powinny być świadomie podpięte podczas implementacji.
+
 ## 6. Typowy przepływ feature’a
 
 Dla nowego endpointu trzymaj się poniższego flow:
@@ -259,6 +271,14 @@ Są dwa główne tryby:
 - user auth przez ORY Kratos w `internal/middleware/kratos_auth.go`,
 - authz przez Casbin w `internal/authz/` i `internal/middleware/casbin_authz.go`,
 - admin/internal auth przez secret key w `internal/middleware/admin_key_auth.go`.
+
+Te moduły są przełączane konfiguracją:
+
+- `auth.enabled=false` nie rejestruje tras wymagających sesji Kratos,
+- `rbac.enabled=false` zostawia auth bez middleware Casbina,
+- `admin.enabled=false` nie rejestruje tras admin opartych o `X-Admin-Key`.
+
+Nie zakładaj, że każdy projekt na tym template ma włączony Kratos, Casbin albo admin endpoints. Kod feature'a powinien jasno wskazywać wymagany poziom ochrony podczas rejestracji routingu.
 
 Kontroler może odczytać sesję przez:
 
@@ -351,6 +371,8 @@ Jeśli tworzysz nowy feature, wykonuj go w tej kolejności:
 8. Dodaj mapper outputu, jeśli endpoint nie powinien zwracać surowej encji.
 9. Jeśli zmieniasz schemat danych, dopisz model i migrację.
 10. Jeśli feature ma efekt uboczny async, umieść go w `services`, nie w kontrolerze.
+
+Jeśli feature dodaje tabelę, preferuj wersjonowaną migrację SQL w `internal/migrations/<driver>/`. `AutoMigrate` jest zostawione tylko jako lekki tryb prototypowy przez `database.disable_versioned_migrations=true`.
 
 ## 14. Czego AI nie powinno robić
 

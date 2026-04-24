@@ -39,6 +39,8 @@ main.go
 - `config/config.postgres.example.json` dla PostgreSQL
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
+- lekkie wersjonowane migracje SQL w `internal/migrations/`
+- `scripts/generate-feature.sh` jako generator szkieletu modułu
 
 ## Uruchomienie
 
@@ -48,9 +50,73 @@ go run . -migrate=true
 ```
 
 Domyślnie aplikacja czyta konfigurację z `config/config.json`.
+Ścieżkę można zmienić przez flagę albo env:
+
+```bash
+go run . -config=config/config.postgres.example.json -migrate=true
+CONFIG_PATH=config/config.docker.json go run . -migrate=true
+```
+
 Punkt startowy dla nowego serwisu:
 - `config/config.example.json` dla MySQL
 - `config/config.postgres.example.json` dla PostgreSQL
+
+Najważniejsze override'y env:
+- `AUTH_ENABLED`, `AUTH_PROVIDER`, `AUTH_DOMAIN`
+- `RBAC_ENABLED`
+- `ADMIN_ENABLED`, `ADMIN_SECRET_KEY`
+- `DB_DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_PORT`
+- `DB_MAX_OPEN_CONNS`, `DB_MAX_IDLE_CONNS`, `DB_CONN_MAX_LIFETIME_SECONDS`, `DB_CONN_MAX_IDLE_TIME_SECONDS`
+- `TRACE_EXPORTER`, `TRACE_OTLP_ENDPOINT`, `LOG_LEVEL`
+
+## Moduły Opcjonalne
+
+Template pozwala wyłączyć moduły infrastrukturalne bez usuwania kodu:
+
+```json
+{
+  "auth": { "enabled": false, "provider": "kratos", "domain": "" },
+  "rbac": { "enabled": false },
+  "admin": { "enabled": false, "secret_key": "" }
+}
+```
+
+Zasady:
+- `auth.enabled=false` nie rejestruje tras wymagających sesji Kratos pod `/v1`
+- `rbac.enabled=false` zostawia auth bez sprawdzania Casbina
+- `admin.enabled=false` nie rejestruje tras `/admin/*` chronionych `X-Admin-Key`
+- `rbac.enabled=true` wymaga `auth.enabled=true`
+
+## Migracje
+
+Domyślnie `-migrate=true` uruchamia lekkie wersjonowane migracje SQL z:
+- `internal/migrations/mysql/`
+- `internal/migrations/postgres/`
+
+Wykonane migracje są zapisywane w tabeli `schema_migrations`. Nazwę tabeli można zmienić przez `database.migrations_table`.
+Dla szybkich prototypów można wrócić do GORM `AutoMigrate`:
+
+```json
+{
+  "database": {
+    "disable_versioned_migrations": true
+  }
+}
+```
+
+## Generator Modułu
+
+```bash
+scripts/generate-feature.sh invoice
+```
+
+Generator tworzy szkielety:
+- `models/invoice_*`
+- `store/invoiceStore.go`
+- `services/invoiceService.go`
+- `controllers/invoiceController.go`
+
+Po wygenerowaniu trzeba ręcznie podpiąć moduł w `store.AppStore`, `services.AppService`, `main.go` i migracjach.
 
 ## Docker
 

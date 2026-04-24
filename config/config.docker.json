@@ -6,12 +6,21 @@
     "port": 8081
   },
   "auth_domain": "http://host.docker.internal:4433",
+  "auth": {
+    "enabled": true,
+    "provider": "kratos",
+    "domain": "http://host.docker.internal:4433"
+  },
+  "rbac": {
+    "enabled": true
+  },
   "languages": ["pl", "en"],
   "domains": [
     "http://localhost:8081",
     "http://127.0.0.1:8081"
   ],
   "admin": {
+    "enabled": true,
     "secret_key": "CHANGE_ME_ADMIN_KEY"
   },
   "observability": {
@@ -43,6 +52,12 @@
     "dbname": "procyon",
     "port": 3306,
     "charset": "utf8mb4",
-    "timezone": "UTC"
+    "timezone": "UTC",
+    "max_open_conns": 25,
+    "max_idle_conns": 10,
+    "conn_max_lifetime_seconds": 1800,
+    "conn_max_idle_time_seconds": 300,
+    "migrations_table": "schema_migrations",
+    "disable_versioned_migrations": false
   }
 }

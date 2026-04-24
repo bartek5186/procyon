@@ -26,9 +26,11 @@ import (
 const appVersion = "0.1.0"
 
 var migrate bool
+var configPath string
 
 func init() {
 	flag.BoolVar(&migrate, "migrate", false, "Run DB migrations on start")
+	flag.StringVar(&configPath, "config", "", "Path to runtime config file")
 }
 
 func main() {
@@ -40,7 +42,14 @@ func main() {
 		logger.GetLogger().Fatal("failed to load translations", zap.Error(err))
 	}
 
-	config := internal.LoadConfiguration("config/config.json")
+	if configPath == "" {
+		configPath = os.Getenv("CONFIG_PATH")
+	}
+	if configPath == "" {
+		configPath = "config/config.json"
+	}
+
+	config := internal.LoadConfiguration(configPath)
 	obsConfig := config.Observability.WithDefaults(appVersion, config.AppName, config.Prod)
 	logger = internal.NewLoggerWithConfig(
 		config.Logging,
@@ -50,9 +59,13 @@ func main() {
 	)
 
 	db := internal.NewDatabaseConnection(config)
-	casbinAuthz, err := authz.NewCasbinAuthorizer(db)
-	if err != nil {
-		logger.GetLogger().Fatal("failed to initialize casbin", zap.Error(err))
+	var casbinAuthz *authz.CasbinAuthorizer
+	if config.RBACEnabled() {
+		var err error
+		casbinAuthz, err = authz.NewCasbinAuthorizer(db)
+		if err != nil {
+			logger.GetLogger().Fatal("failed to initialize casbin", zap.Error(err))
+		}
 	}
 
 	obs, err := telemetry.New(context.Background(), obsConfig, logger.GetLogger(), db)
@@ -61,7 +74,7 @@ func main() {
 	}
 
 	if migrate {
-		if err := internal.MigrateRun(db); err != nil {
+		if err := internal.MigrateRun(db, config); err != nil {
 			logger.GetLogger().Fatal("failed to run migrations", zap.Error(err))
 		}
 	}
@@ -70,7 +83,15 @@ func main() {
 	appService := services.NewAppService(appStore, logger.GetLogger())
 	helloController := controllers.NewHelloController(appService, logger.GetLogger())
 
-	kratosAuth := mid.NewKratosAuth(config.AuthDomain)
+	var kratosAuth *mid.KratosAuth
+	if config.AuthEnabled() {
+		switch config.AuthProvider() {
+		case "kratos":
+			kratosAuth = mid.NewKratosAuth(config.AuthBaseURL())
+		default:
+			logger.GetLogger().Fatal("unsupported auth provider", zap.String("provider", config.AuthProvider()))
+		}
+	}
 	rbac := mid.NewCasbinRBAC(casbinAuthz)
 	adminAuth := mid.NewAdminKeyAuth(config.Admin.SecretKey)
 
@@ -102,26 +123,36 @@ func main() {
 	e.GET("/health", helloController.Health)
 	e.GET("/hello", helloController.Hello)
 
-	secured := e.Group("/v1", kratosAuth.RequireSession)
-	secured.GET("/hello", helloController.HelloAuthenticated, rbac.Require("hello", "read"))
+	if config.AuthEnabled() {
+		secured := e.Group("/v1", kratosAuth.RequireSession)
+		if config.RBACEnabled() {
+			secured.GET("/hello", helloController.HelloAuthenticated, rbac.Require("hello", "read"))
+			securedAdmin := secured.Group("/admin", rbac.Require("hello", "manage"))
+			securedAdmin.GET("/hello", helloController.HelloAdmin)
+		} else {
+			secured.GET("/hello", helloController.HelloAuthenticated)
+		}
+	}
 
-	securedAdmin := secured.Group("/admin", rbac.Require("hello", "manage"))
-	securedAdmin.GET("/hello", helloController.HelloAdmin)
-
-	admin := e.Group("/admin", adminAuth.RequireAdminKey)
-	admin.GET("/ping", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]any{
-			"status": "ok",
-			"auth":   "admin_key",
-			"time":   time.Now().UTC().Format(time.RFC3339),
+	if config.AdminEnabled() {
+		admin := e.Group("/admin", adminAuth.RequireAdminKey)
+		admin.GET("/ping", func(c echo.Context) error {
+			return c.JSON(http.StatusOK, map[string]any{
+				"status": "ok",
+				"auth":   "admin_key",
+				"time":   time.Now().UTC().Format(time.RFC3339),
+			})
 		})
-	})
+	}
 
 	logger.GetLogger().Info(
 		"server starting",
 		zap.String("app", config.AppName),
 		zap.String("address", config.ServerAddress()),
 		zap.Bool("migrate", migrate),
+		zap.Bool("auth_enabled", config.AuthEnabled()),
+		zap.Bool("rbac_enabled", config.RBACEnabled()),
+		zap.Bool("admin_enabled", config.AdminEnabled()),
 		zap.String("metrics_path", obsConfig.MetricsPath),
 	)
 
