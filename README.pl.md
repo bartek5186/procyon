@@ -62,6 +62,28 @@ Punkt startowy dla nowego serwisu:
 - `config/config.example.json` dla MySQL
 - `config/config.postgres.example.json` dla PostgreSQL
 
+## Inicjalizacja Projektu
+
+Nowy projekt z tego template'u utworzysz przez:
+
+```bash
+go run ./cmd/procyon init
+```
+
+Albo przez flagi w trybie nieinteraktywnym:
+
+```bash
+go run ./cmd/procyon init \
+  --name demo-api \
+  --module github.com/acme/demo-api \
+  --db postgres \
+  --auth kratos-casbin \
+  --out ../demo-api
+```
+
+Obsługiwane bazy: `postgres`, `mysql`.
+Obsługiwane tryby auth: `kratos-casbin`, `kratos`, `admin`, `none`.
+
 Najważniejsze override'y env:
 - `AUTH_ENABLED`, `AUTH_PROVIDER`, `AUTH_DOMAIN`
 - `RBAC_ENABLED`

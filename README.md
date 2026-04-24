@@ -62,6 +62,28 @@ Use:
 - `config/config.example.json` for MySQL
 - `config/config.postgres.example.json` for PostgreSQL
 
+## Project Init
+
+Create a new project from this template with:
+
+```bash
+go run ./cmd/procyon init
+```
+
+Or use flags for non-interactive setup:
+
+```bash
+go run ./cmd/procyon init \
+  --name demo-api \
+  --module github.com/acme/demo-api \
+  --db postgres \
+  --auth kratos-casbin \
+  --out ../demo-api
+```
+
+Supported database values: `postgres`, `mysql`.
+Supported auth values: `kratos-casbin`, `kratos`, `admin`, `none`.
+
 Most important env overrides:
 - `AUTH_ENABLED`, `AUTH_PROVIDER`, `AUTH_DOMAIN`
 - `RBAC_ENABLED`
