@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"net/http"
 	"strings"
 
+	"github.com/bartek5186/procyon/internal/apierr"
 	"github.com/bartek5186/procyon/internal/authz"
 	"github.com/labstack/echo/v4"
 )
@@ -22,30 +22,30 @@ func (m *CasbinRBAC) Require(obj, act string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if m == nil || m.authorizer == nil {
-				return c.JSON(http.StatusInternalServerError, map[string]any{"error": "authorization not configured"})
+				return apierr.ReplyInternal(c, "authorization not configured", nil)
 			}
 
 			session, ok := SessionFromContext(c)
 			if !ok || session == nil || session.Identity == nil {
-				return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+				return apierr.ReplyUnauthorized(c, "unauthorized")
 			}
 
 			userID := strings.TrimSpace(session.Identity.Id)
 			if userID == "" {
-				return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+				return apierr.ReplyUnauthorized(c, "unauthorized")
 			}
 
 			role := authz.RoleFromSession(session)
 			if err := m.authorizer.EnsureUserRole(c.Request().Context(), userID, role); err != nil {
-				return c.JSON(http.StatusInternalServerError, map[string]any{"error": "authorization sync failed"})
+				return apierr.ReplyInternalCode(c, "authorization_sync_failed", "authorization sync failed", err)
 			}
 
 			allowed, err := m.authorizer.Can(c.Request().Context(), userID, obj, act)
 			if err != nil {
-				return c.JSON(http.StatusInternalServerError, map[string]any{"error": "authorization check failed"})
+				return apierr.ReplyInternalCode(c, "authorization_check_failed", "authorization check failed", err)
 			}
 			if !allowed {
-				return c.JSON(http.StatusForbidden, map[string]any{"error": "forbidden"})
+				return apierr.ReplyForbidden(c, "forbidden")
 			}
 
 			c.Set(ContextKeyRole, role)

@@ -26,6 +26,7 @@ main.go
 - `internal/logger.go` with `zap` JSON logging to stdout and optional daily files
 - `internal/telemetry/` with OpenTelemetry traces, OpenMetrics, health/readiness/info handlers and HTTP request logging
 - `internal/authz/` with Casbin model, default policies and role helpers
+- `internal/apierr/` with a shared API error envelope and Echo error handler
 - `internal/validator.go`
 - `internal/middleware/language.go`
 - `internal/middleware/kratos_auth.go` with auth based on ORY Kratos session auth
@@ -39,6 +40,8 @@ main.go
 - `config/config.postgres.example.json` for PostgreSQL
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
+- SQL migrations through `goose` in `internal/migrations/`
+- `scripts/generate-feature.sh` as a module skeleton generator
 
 ## Running
 
@@ -48,9 +51,94 @@ go run . -migrate=true
 ```
 
 By default, the application reads configuration from `config/config.json`.
+You can change the path through a flag or env:
+
+```bash
+go run . -config=config/config.postgres.example.json -migrate=true
+CONFIG_PATH=config/config.docker.json go run . -migrate=true
+```
+
 Use:
 - `config/config.example.json` for MySQL
 - `config/config.postgres.example.json` for PostgreSQL
+
+Most important env overrides:
+- `AUTH_ENABLED`, `AUTH_PROVIDER`, `AUTH_DOMAIN`
+- `RBAC_ENABLED`
+- `ADMIN_ENABLED`, `ADMIN_SECRET_KEY`
+- `DB_DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_PORT`
+- `DB_MAX_OPEN_CONNS`, `DB_MAX_IDLE_CONNS`, `DB_CONN_MAX_LIFETIME_SECONDS`, `DB_CONN_MAX_IDLE_TIME_SECONDS`
+- `TRACE_EXPORTER`, `TRACE_OTLP_ENDPOINT`, `LOG_LEVEL`
+
+## Optional Modules
+
+The template can disable infrastructure modules without removing code:
+
+```json
+{
+  "auth": { "enabled": false, "provider": "kratos", "domain": "" },
+  "rbac": { "enabled": false },
+  "admin": { "enabled": false, "secret_key": "" }
+}
+```
+
+Rules:
+- `auth.enabled=false` does not register Kratos-protected routes under `/v1`
+- `rbac.enabled=false` keeps auth without Casbin checks
+- `admin.enabled=false` does not register `/admin/*` routes protected by `X-Admin-Key`
+- `rbac.enabled=true` requires `auth.enabled=true`
+
+## Migrations
+
+By default, `-migrate=true` runs versioned SQL migrations through `goose` from:
+- `internal/migrations/mysql/`
+- `internal/migrations/postgres/`
+
+Applied migrations are stored in the `schema_migrations` table. You can change the table name with `database.migrations_table` and the directory with `database.migrations_dir`.
+For fast prototypes, you can switch back to GORM `AutoMigrate`:
+
+```json
+{
+  "database": {
+    "disable_versioned_migrations": true
+  }
+}
+```
+
+`AutoMigrate` is not "bad" because it deletes data. GORM generally does not drop columns or tables automatically. The problem is different: you do not get an explicit, versioned schema history, rollbacks, environment status, or control over difficult changes such as column renames, backfills, table splits, separately created indexes, and constraint changes. That is why the production path uses `goose`, while `AutoMigrate` remains a quick prototype mode.
+
+## Module Generator
+
+```bash
+scripts/generate-feature.sh invoice
+scripts/generate-feature.sh invoice --with-wiring
+```
+
+The generator creates skeletons:
+- `models/invoice_*`
+- `store/invoiceStore.go`
+- `services/invoiceService.go`
+- `controllers/invoiceController.go`
+- goose migrations for MySQL and PostgreSQL
+
+With `--with-wiring`, the generator also wires `store.AppStore` and `services.AppService`.
+After generation, manually register the controller and routes in `main.go`, then review the generated migrations.
+
+## API Errors
+
+Errors use a shared envelope:
+
+```json
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "validation failed"
+  },
+  "request_id": "..."
+}
+```
+
+Use `internal/apierr` in controllers and middleware instead of ad hoc `{"error": "..."}` responses.
 
 ## Docker
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/bartek5186/procyon/internal/apierr"
 	"github.com/bartek5186/procyon/internal/middleware"
 	"github.com/bartek5186/procyon/models"
 	"github.com/bartek5186/procyon/services"
@@ -33,16 +34,16 @@ func (c *HelloController) Hello(ec echo.Context) error {
 
 	var in models.HelloInput
 	if err := ec.Bind(&in); err != nil {
-		return ec.JSON(http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+		return apierr.ReplyBadRequest(ec, "invalid payload")
 	}
 	if err := ec.Validate(&in); err != nil {
-		return ec.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return apierr.ReplyValidation(ec, err)
 	}
 
 	out, err := c.appService.Hello.Greet(ctx, in, "")
 	if err != nil {
 		c.logger.Error("hello request failed", zap.Error(err))
-		return ec.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return apierr.Reply(ec, err)
 	}
 
 	return ec.JSON(http.StatusOK, out)
@@ -74,21 +75,21 @@ func (c *HelloController) greetAuthenticated(ec echo.Context) (*models.HelloResp
 
 	var in models.HelloInput
 	if err := ec.Bind(&in); err != nil {
-		return nil, ec.JSON(http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+		return nil, apierr.ReplyBadRequest(ec, "invalid payload")
 	}
 	if err := ec.Validate(&in); err != nil {
-		return nil, ec.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, apierr.ReplyValidation(ec, err)
 	}
 
 	sess, ok := middleware.SessionFromContext(ec)
 	if !ok || sess == nil {
-		return nil, ec.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return nil, apierr.ReplyUnauthorized(ec, "unauthorized")
 	}
 
 	out, err := c.appService.Hello.Greet(ctx, in, sess.Identity.Id)
 	if err != nil {
 		c.logger.Error("authenticated hello request failed", zap.Error(err))
-		return nil, ec.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return nil, apierr.Reply(ec, err)
 	}
 
 	if role, ok := middleware.RoleFromContext(ec); ok {

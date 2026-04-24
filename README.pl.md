@@ -26,6 +26,7 @@ main.go
 - `internal/logger.go` z `zap`, JSON na stdout i opcjonalnym zapisem do pliku
 - `internal/telemetry/` z OpenTelemetry, OpenMetrics, health/readiness/info i logami requestów HTTP
 - `internal/authz/` z Casbinem, domyślnym modelem polityk i helperami ról
+- `internal/apierr/` ze wspólnym formatem błędów API i Echo error handlerem
 - `internal/validator.go`
 - `internal/middleware/language.go`
 - `internal/middleware/kratos_auth.go` z auth opartym o ORY Kratos
@@ -110,6 +111,7 @@ Dla szybkich prototypów można wrócić do GORM `AutoMigrate`:
 
 ```bash
 scripts/generate-feature.sh invoice
+scripts/generate-feature.sh invoice --with-wiring
 ```
 
 Generator tworzy szkielety:
@@ -117,8 +119,26 @@ Generator tworzy szkielety:
 - `store/invoiceStore.go`
 - `services/invoiceService.go`
 - `controllers/invoiceController.go`
+- migracje goose dla MySQL i PostgreSQL
 
-Po wygenerowaniu trzeba ręcznie podpiąć moduł w `store.AppStore`, `services.AppService`, `main.go` i migracjach.
+Z `--with-wiring` generator podpina też `store.AppStore` i `services.AppService`.
+Po wygenerowaniu trzeba ręcznie zarejestrować kontroler i routing w `main.go`, a potem sprawdzić wygenerowane migracje.
+
+## Błędy API
+
+Błędy używają wspólnego formatu:
+
+```json
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "validation failed"
+  },
+  "request_id": "..."
+}
+```
+
+W controllerach i middleware używaj `internal/apierr` zamiast lokalnych odpowiedzi typu `{"error": "..."}`.
 
 ## Docker
 

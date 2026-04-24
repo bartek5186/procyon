@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bartek5186/procyon/internal/apierr"
 	"github.com/labstack/echo/v4"
 	ory "github.com/ory/client-go"
 )
@@ -42,7 +43,7 @@ func (a *KratosAuth) RequireSession(next echo.HandlerFunc) echo.HandlerFunc {
 		req := c.Request()
 		httpReq, err := http.NewRequestWithContext(req.Context(), http.MethodGet, a.publicBaseURL+"/sessions/whoami", nil)
 		if err != nil {
-			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return apierr.ReplyUnauthorized(c, "unauthorized")
 		}
 
 		if tok := req.Header.Get("X-Session-Token"); tok != "" {
@@ -58,13 +59,13 @@ func (a *KratosAuth) RequireSession(next echo.HandlerFunc) echo.HandlerFunc {
 			if resp != nil {
 				resp.Body.Close()
 			}
-			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return apierr.ReplyUnauthorized(c, "unauthorized")
 		}
 		defer resp.Body.Close()
 
 		var session ory.Session
 		if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
-			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+			return apierr.ReplyUnauthorized(c, "unauthorized")
 		}
 
 		c.Set(ContextKeySession, &session)

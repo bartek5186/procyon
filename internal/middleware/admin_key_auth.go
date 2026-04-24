@@ -1,9 +1,10 @@
 package middleware
 
 import (
-	"net/http"
+	"crypto/subtle"
 	"strings"
 
+	"github.com/bartek5186/procyon/internal/apierr"
 	"github.com/labstack/echo/v4"
 )
 
@@ -20,8 +21,8 @@ func NewAdminKeyAuth(secretKey string) *AdminKeyAuth {
 func (m *AdminKeyAuth) RequireAdminKey(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		adminKey := strings.TrimSpace(c.Request().Header.Get("X-Admin-Key"))
-		if adminKey == "" || adminKey != m.secretKey {
-			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+		if adminKey == "" || m.secretKey == "" || subtle.ConstantTimeCompare([]byte(adminKey), []byte(m.secretKey)) != 1 {
+			return apierr.ReplyUnauthorized(c, "unauthorized")
 		}
 
 		return next(c)

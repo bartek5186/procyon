@@ -12,6 +12,7 @@ import (
 
 	"github.com/bartek5186/procyon/controllers"
 	"github.com/bartek5186/procyon/internal"
+	"github.com/bartek5186/procyon/internal/apierr"
 	"github.com/bartek5186/procyon/internal/authz"
 	"github.com/bartek5186/procyon/internal/i18n"
 	mid "github.com/bartek5186/procyon/internal/middleware"
@@ -97,6 +98,7 @@ func main() {
 
 	e := echo.New()
 	e.HideBanner = true
+	e.HTTPErrorHandler = apierr.Handler(logger.GetLogger())
 	e.Validator = internal.NewInputValidator()
 	e.Server.ReadHeaderTimeout = 5 * time.Second
 	e.Server.ReadTimeout = 15 * time.Second
