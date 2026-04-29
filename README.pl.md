@@ -218,6 +218,7 @@ Co robi skrypt:
 - RBAC używa Kratos identity ID oraz ról/polityk Casbina trzymanych w app DB; pola roli w Kratos traits albo metadata nie są traktowane jako zaufane
 
 Zobacz [METRICS.md](METRICS.md), żeby sprawdzić konfigurację metryk i przykłady metryk biznesowych.
+Zobacz [ROLES.md](ROLES.md), żeby sprawdzić konfigurację RBAC Kratos/Casbin i przykłady ról.
 
 ## Co podmienić w nowym projekcie
 

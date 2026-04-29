@@ -218,6 +218,7 @@ What it does:
 - RBAC uses Kratos identity ID plus Casbin roles/policies stored in the app DB; role fields in Kratos traits or metadata are not trusted
 
 See [METRICS.md](METRICS.md) for metrics configuration and business metric examples.
+See [ROLES.md](ROLES.md) for Kratos/Casbin RBAC configuration and role examples.
 
 ## What to replace in a new project
 
