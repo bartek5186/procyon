@@ -73,22 +73,46 @@ type DatabaseConfig struct {
 	MigrationsTable        string `json:"migrations_table"`
 }
 
+type ServerConfig struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+func (s ServerConfig) address(defaultHost string, defaultPort int) string {
+	host := strings.TrimSpace(s.Host)
+	if host == "" {
+		host = defaultHost
+	}
+	port := s.Port
+	if port <= 0 {
+		port = defaultPort
+	}
+	return fmt.Sprintf("%s:%d", host, port)
+}
+
 type Config struct {
-	Prod       bool        `json:"prod"`
-	AppName    string      `json:"app_name"`
-	AuthDomain string      `json:"auth_domain"`
-	Languages  []string    `json:"languages"`
-	Domains    []string    `json:"domains"`
-	Auth       AuthConfig  `json:"auth"`
-	RBAC       RBACConfig  `json:"rbac"`
-	Admin      AdminConfig `json:"admin"`
-	Server     struct {
-		Host string `json:"host"`
-		Port int    `json:"port"`
-	} `json:"server"`
+	Prod          bool           `json:"prod"`
+	AppName       string         `json:"app_name"`
+	AuthDomain    string         `json:"auth_domain"`
+	Languages     []string       `json:"languages"`
+	Domains       []string       `json:"domains"`
+	Auth          AuthConfig     `json:"auth"`
+	RBAC          RBACConfig     `json:"rbac"`
+	Admin         AdminConfig    `json:"admin"`
+	Servers       []ServerConfig `json:"servers"`
 	Database      DatabaseConfig      `json:"database"`
 	Observability ObservabilityConfig `json:"observability"`
 	Logging       LoggingConfig       `json:"logging"`
+}
+
+func (c Config) server(name string) ServerConfig {
+	for _, s := range c.Servers {
+		if s.Name == name {
+			return s
+		}
+	}
+	return ServerConfig{}
 }
 
 func LoadConfiguration(file string) Config {
@@ -171,19 +195,9 @@ func optionalBool(value *bool, fallback bool) bool {
 	return *value
 }
 
-func (c Config) ServerAddress() string {
-	host := strings.TrimSpace(c.Server.Host)
-	if host == "" {
-		host = "0.0.0.0"
-	}
-
-	port := c.Server.Port
-	if port <= 0 {
-		port = 8080
-	}
-
-	return fmt.Sprintf("%s:%d", host, port)
-}
+func (c Config) PublicAddress() string { return c.server("public").address("0.0.0.0", 8080) }
+func (c Config) AdminAddress() string  { return c.server("admin").address("127.0.0.1", 8081) }
+func (c Config) UploadAddress() string { return c.server("upload").address("0.0.0.0", 8082) }
 
 func (cfg ObservabilityConfig) WithDefaults(appVersion, appName string, prod bool) ObservabilityConfig {
 	if strings.TrimSpace(cfg.ServiceName) == "" {

@@ -4,38 +4,28 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bartek5186/procyon/controllers"
-	"github.com/bartek5186/procyon/internal"
-	mid "github.com/bartek5186/procyon/internal/middleware"
-	"github.com/bartek5186/procyon/internal/telemetry"
 	"github.com/labstack/echo/v4"
 )
 
-func registerRoutes(
-	e *echo.Echo,
-	obsConfig internal.ObservabilityConfig,
-	obs *telemetry.Manager,
-	hello *controllers.HelloController,
-	kratosAuth *mid.KratosAuth,
-	rbac *mid.CasbinRBAC,
-	adminAuth *mid.AdminKeyAuth,
-) {
+func registerPublicRoutes(e *echo.Echo, app *application) {
 	e.Static("/", "static")
 
-	e.GET(obsConfig.HealthPath, obs.HealthHandler)
-	e.GET(obsConfig.ReadyPath, obs.ReadyHandler)
-	e.GET(obsConfig.InfoPath, obs.InfoHandler)
-	e.GET(obsConfig.MetricsPath, echo.WrapHandler(obs.MetricsHandler()))
+	e.GET(app.obsConfig.HealthPath, app.obs.HealthHandler)
+	e.GET(app.obsConfig.ReadyPath, app.obs.ReadyHandler)
+	e.GET(app.obsConfig.InfoPath, app.obs.InfoHandler)
+	e.GET(app.obsConfig.MetricsPath, echo.WrapHandler(app.obs.MetricsHandler()))
 
-	e.GET("/health", hello.Health)
-	e.GET("/hello", hello.Hello)
+	e.GET("/health", app.hello.Health)
+	e.GET("/hello", app.hello.Hello)
 
-	secured := e.Group("/v1", kratosAuth.RequireSession)
-	secured.GET("/hello", hello.HelloAuthenticated, rbac.Require("hello", "read"))
-	securedAdmin := secured.Group("/admin", rbac.Require("hello", "manage"))
-	securedAdmin.GET("/hello", hello.HelloAdmin)
+	secured := e.Group("/v1", app.kratosAuth.RequireSession)
+	secured.GET("/hello", app.hello.HelloAuthenticated, app.rbac.Require("hello", "read"))
+	securedAdmin := secured.Group("/admin", app.rbac.Require("hello", "manage"))
+	securedAdmin.GET("/hello", app.hello.HelloAdmin)
+}
 
-	admin := e.Group("/admin", adminAuth.RequireAdminKey)
+func registerAdminRoutes(e *echo.Echo, app *application) {
+	admin := e.Group("", app.adminAuth.RequireAdminKey)
 	admin.GET("/ping", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{
 			"status": "ok",
@@ -43,4 +33,8 @@ func registerRoutes(
 			"time":   time.Now().UTC().Format(time.RFC3339),
 		})
 	})
+}
+
+func registerUploadRoutes(e *echo.Echo, app *application) {
+	e.Group("/upload", app.kratosAuth.RequireSession)
 }

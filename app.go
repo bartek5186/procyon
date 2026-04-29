@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,6 +23,15 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
 )
+
+type application struct {
+	obsConfig  internal.ObservabilityConfig
+	obs        *telemetry.Manager
+	kratosAuth *mid.KratosAuth
+	rbac       *mid.CasbinRBAC
+	adminAuth  *mid.AdminKeyAuth
+	hello      *controllers.HelloController
+}
 
 func run() error {
 	logger := internal.NewLogger()
@@ -62,7 +72,6 @@ func run() error {
 
 	appStore := store.NewAppStore(db, &config)
 	appService := services.NewAppService(appStore, logger.GetLogger(), obs.BusinessMetrics())
-	helloController := controllers.NewHelloController(appService, logger.GetLogger())
 
 	var kratosAuth *mid.KratosAuth
 	switch config.AuthProvider() {
@@ -71,21 +80,84 @@ func run() error {
 	default:
 		logger.GetLogger().Fatal("unsupported auth provider", zap.String("provider", config.AuthProvider()))
 	}
-	rbac := mid.NewCasbinRBAC(casbinAuthz)
-	adminAuth := mid.NewAdminKeyAuth(config.Admin.SecretKey)
 
-	e := echo.New()
-	e.HideBanner = true
-	e.HTTPErrorHandler = apierr.Handler(logger.GetLogger())
-	e.Validator = internal.NewInputValidator()
-	e.Server.ReadHeaderTimeout = 5 * time.Second
-	e.Server.ReadTimeout = 10 * time.Minute
-	e.Server.WriteTimeout = 60 * time.Second
-	e.Server.IdleTimeout = 120 * time.Second
+	app := &application{
+		obsConfig:  obsConfig,
+		obs:        obs,
+		kratosAuth: kratosAuth,
+		rbac:       mid.NewCasbinRBAC(casbinAuthz),
+		adminAuth:  mid.NewAdminKeyAuth(config.Admin.SecretKey),
+		hello:      controllers.NewHelloController(appService, logger.GetLogger()),
+	}
 
-	e.Use(middleware.RequestID())
+	public := newPublicServer(config, obs)
+	registerPublicRoutes(public, app)
+
+	admin := newAdminServer()
+	registerAdminRoutes(admin, app)
+
+	upload := newUploadServer()
+	registerUploadRoutes(upload, app)
+
+	logger.GetLogger().Info(
+		"server starting",
+		zap.String("app", config.AppName),
+		zap.String("public", config.PublicAddress()),
+		zap.String("admin", config.AdminAddress()),
+		zap.String("upload", config.UploadAddress()),
+		zap.Bool("migrate", migrate),
+		zap.String("metrics_path", obsConfig.MetricsPath),
+	)
+
+	type serverErr struct {
+		name string
+		err  error
+	}
+	errs := make(chan serverErr, 3)
+	startServer := func(name, addr string, e *echo.Echo) {
+		go func() {
+			if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errs <- serverErr{name, err}
+			}
+		}()
+	}
+	startServer("public", config.PublicAddress(), public)
+	startServer("admin", config.AdminAddress(), admin)
+	startServer("upload", config.UploadAddress(), upload)
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	select {
+	case se := <-errs:
+		return fmt.Errorf("server %s: %w", se.name, se.err)
+	case sig := <-signals:
+		logger.GetLogger().Info("shutting down", zap.String("signal", sig.String()))
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for name, e := range map[string]*echo.Echo{"public": public, "admin": admin, "upload": upload} {
+		if err := e.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.GetLogger().Error("shutdown failed", zap.String("server", name), zap.Error(err))
+		}
+	}
+	if err := obs.Shutdown(shutdownCtx); err != nil {
+		logger.GetLogger().Error("telemetry shutdown failed", zap.Error(err))
+	}
+
+	return nil
+}
+
+func newPublicServer(config internal.Config, obs *telemetry.Manager) *echo.Echo {
+	e := newBaseServer()
+	e.Server.ReadTimeout = 15 * time.Second
+	e.Server.WriteTimeout = 30 * time.Second
+	e.Server.IdleTimeout = 60 * time.Second
+
 	e.Use(mid.LanguageMiddleware("pl", config.Languages))
-	e.Use(middleware.Recover())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins:     config.Domains,
 		AllowMethods:     []string{echo.GET, echo.POST, echo.PUT, echo.PATCH, echo.DELETE, echo.OPTIONS},
@@ -93,43 +165,36 @@ func run() error {
 	}))
 	e.Use(obs.Middleware())
 
-	registerRoutes(e, obsConfig, obs, helloController, kratosAuth, rbac, adminAuth)
+	return e
+}
 
-	logger.GetLogger().Info(
-		"server starting",
-		zap.String("app", config.AppName),
-		zap.String("address", config.ServerAddress()),
-		zap.Bool("migrate", migrate),
-		zap.String("metrics_path", obsConfig.MetricsPath),
-	)
+func newAdminServer() *echo.Echo {
+	e := newBaseServer()
+	e.Server.ReadTimeout = 30 * time.Second
+	e.Server.WriteTimeout = 30 * time.Second
+	e.Server.IdleTimeout = 30 * time.Second
 
-	serverErr := make(chan error, 1)
-	go func() {
-		if err := e.Start(config.ServerAddress()); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
-		}
-	}()
+	return e
+}
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
+func newUploadServer() *echo.Echo {
+	e := newBaseServer()
+	e.Server.ReadTimeout = 10 * time.Minute
+	e.Server.WriteTimeout = 10 * time.Minute
+	e.Server.IdleTimeout = 120 * time.Second
 
-	select {
-	case err := <-serverErr:
-		return err
-	case sig := <-signals:
-		logger.GetLogger().Info("shutting down server", zap.String("signal", sig.String()))
-	}
+	return e
+}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func newBaseServer() *echo.Echo {
+	e := echo.New()
+	e.HideBanner = true
+	e.HTTPErrorHandler = apierr.Handler(internal.NewLogger().GetLogger())
+	e.Validator = internal.NewInputValidator()
+	e.Server.ReadHeaderTimeout = 5 * time.Second
 
-	if err := e.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.GetLogger().Error("server shutdown failed", zap.Error(err))
-	}
-	if err := obs.Shutdown(shutdownCtx); err != nil {
-		logger.GetLogger().Error("telemetry shutdown failed", zap.Error(err))
-	}
+	e.Use(middleware.RequestID())
+	e.Use(middleware.Recover())
 
-	return nil
+	return e
 }

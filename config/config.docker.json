@@ -1,10 +1,11 @@
 {
   "prod": false,
   "app_name": "Procyon",
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8081
-  },
+  "servers": [
+    {"name": "public", "host": "0.0.0.0",   "port": 8080},
+    {"name": "admin",  "host": "127.0.0.1", "port": 8081},
+    {"name": "upload", "host": "0.0.0.0",   "port": 8082}
+  ],
   "auth_domain": "http://host.docker.internal:4433",
   "auth": {
     "provider": "kratos",
