@@ -66,13 +66,15 @@ Use:
 Create a new project from this template with:
 
 ```bash
-go run ./cmd/procyon init
+cd procyon-cli
+go run . init
 ```
 
 Or use flags for non-interactive setup:
 
 ```bash
-go run ./cmd/procyon init \
+cd procyon-cli
+go run . init \
   --name demo-api \
   --module github.com/acme/demo-api \
   --db postgres \

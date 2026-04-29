@@ -66,13 +66,15 @@ Punkt startowy dla nowego serwisu:
 Nowy projekt z tego template'u utworzysz przez:
 
 ```bash
-go run ./cmd/procyon init
+cd procyon-cli
+go run . init
 ```
 
 Albo przez flagi w trybie nieinteraktywnym:
 
 ```bash
-go run ./cmd/procyon init \
+cd procyon-cli
+go run . init \
   --name demo-api \
   --module github.com/acme/demo-api \
   --db postgres \
