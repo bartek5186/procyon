@@ -16,7 +16,7 @@ import (
 var migrationFiles embed.FS
 
 func MigrateRun(db *gorm.DB, cfg Config) error {
-	if cfg.Database.DisableVersionedMigrations {
+	if cfg.AutoMigrateEnabled() {
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			if err := runAutoMigrate(tx); err != nil {
 				return err

@@ -40,7 +40,7 @@ main.go
 - `config/config.postgres.example.json` dla PostgreSQL
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
-- migracje SQL przez `goose` w `internal/migrations/`
+- domyślny GORM `AutoMigrate` i opcjonalne migracje SQL przez `goose` w `internal/migrations/`
 - `scripts/generate-feature.sh` jako generator szkieletu modułu
 
 ## Uruchomienie
@@ -51,11 +51,10 @@ go run . -migrate=true
 ```
 
 Domyślnie aplikacja czyta konfigurację z `config/config.json`.
-Ścieżkę można zmienić przez flagę albo env:
+Ścieżkę można zmienić przez flagę:
 
 ```bash
 go run . -config=config/config.postgres.example.json -migrate=true
-CONFIG_PATH=config/config.docker.json go run . -migrate=true
 ```
 
 Punkt startowy dla nowego serwisu:
@@ -84,13 +83,7 @@ go run ./cmd/procyon init \
 Obsługiwane bazy: `postgres`, `mysql`.
 Obsługiwane tryby auth: `kratos-casbin`, `kratos`, `admin`, `none`.
 
-Najważniejsze override'y env:
-- `AUTH_ENABLED`, `AUTH_PROVIDER`, `AUTH_DOMAIN`
-- `RBAC_ENABLED`
-- `ADMIN_ENABLED`, `ADMIN_SECRET_KEY`
-- `DB_DRIVER`, `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_PORT`
-- `DB_MAX_OPEN_CONNS`, `DB_MAX_IDLE_CONNS`, `DB_CONN_MAX_LIFETIME_SECONDS`, `DB_CONN_MAX_IDLE_TIME_SECONDS`
-- `TRACE_EXPORTER`, `TRACE_OTLP_ENDPOINT`, `LOG_LEVEL`
+Runtime config jest w plikach JSON. Aplikacja nie nakłada override'ów ze zmiennych środowiskowych dla ustawień app, auth, bazy, logowania ani obserwowalności.
 
 ## Moduły Opcjonalne
 
@@ -112,22 +105,25 @@ Zasady:
 
 ## Migracje
 
-Domyślnie `-migrate=true` uruchamia wersjonowane migracje SQL przez `goose` z:
-- `internal/migrations/mysql/`
-- `internal/migrations/postgres/`
+Domyślnie `-migrate=true` uruchamia GORM `AutoMigrate`, bo `database.auto_migrate` ma wartość `true`.
 
-Wykonane migracje są zapisywane w tabeli `schema_migrations`. Nazwę tabeli można zmienić przez `database.migrations_table`, a katalog przez `database.migrations_dir`.
-Dla szybkich prototypów można wrócić do GORM `AutoMigrate`:
+Kiedy projekt ma już produkcyjne dane i potrzebuje jawnej historii schematu, przełącz się na wersjonowane migracje SQL:
 
 ```json
 {
   "database": {
-    "disable_versioned_migrations": true
+    "auto_migrate": false
   }
 }
 ```
 
-`AutoMigrate` nie jest "złe" dlatego, że kasuje dane. GORM zwykle nie usuwa kolumn ani tabel automatycznie. Problem jest inny: nie masz jawnej, wersjonowanej historii zmian schematu, rollbacków, statusu środowiska ani kontroli nad trudnymi zmianami typu rename kolumny, backfill, split tabeli, indeksy tworzone osobno, zmiany constraintów. Dlatego w produkcyjnej ścieżce template używa `goose`, a `AutoMigrate` zostaje jako szybki tryb prototypowy.
+Wtedy `-migrate=true` uruchamia migracje `goose` embedowane z:
+- `internal/migrations/mysql/`
+- `internal/migrations/postgres/`
+
+Wykonane migracje goose są zapisywane w tabeli `schema_migrations`. Nazwę tabeli można zmienić przez `database.migrations_table`, a katalog przez `database.migrations_dir`.
+
+`AutoMigrate` jest dobrym defaultem na wczesnym etapie projektu. Nie jest "złe" dlatego, że kasuje dane; GORM zwykle nie usuwa kolumn ani tabel automatycznie. Ograniczenie jest inne: nie masz jawnej, wersjonowanej historii zmian schematu, rollbacków, statusu środowiska ani kontroli nad trudnymi zmianami typu rename kolumny, backfill, split tabeli, indeksy tworzone osobno, zmiany constraintów.
 
 ## Generator Modułu
 
@@ -182,20 +178,10 @@ Uwagi:
 
 ## Przykładowy Deploy Produkcyjny
 
-Przykład:
+Utwórz produkcyjny JSON config poza gitem, np. `config/config.prod.json`, a potem wyślij go podczas deploya:
 
 ```bash
-cp .env.example .env
-```
-
-Potem uzupełnij `.env` i uruchom:
-
-```bash
-set -a
-source .env
-set +a
-
-./prod.deploy.sh --with-config
+CONFIG_SOURCE=config/config.prod.json REMOTE=deploy@example.com REMOTE_DIR=/srv/apps/procyon ./prod.deploy.sh --with-config
 ```
 
 Co robi skrypt:

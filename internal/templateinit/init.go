@@ -336,6 +336,7 @@ func rewriteConfigFile(path string, opts Options) error {
 	if db == nil {
 		db = map[string]any{}
 	}
+	db["auto_migrate"] = true
 	if opts.Database == "postgres" {
 		db["driver"] = "postgres"
 		db["host"] = "127.0.0.1"

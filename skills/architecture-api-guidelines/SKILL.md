@@ -1,4 +1,10 @@
-# ARCHITECTURE.md
+---
+name: architecture-api-guidelines
+description: Project-specific architecture and coding guidelines for the Go API server. Use when adding endpoints, services, store methods, models, auth, migrations, integrations, background jobs, or any backend code in this repo.
+license: MIT
+---
+
+# API Architecture Guidelines
 
 Ten dokument opisuje faktyczny styl architektury używany w tym repo i ma służyć jako instrukcja dla AI podczas dodawania lub modyfikowania kodu.
 
@@ -192,7 +198,7 @@ scripts/generate-feature.sh invoice
 
 Generator tworzy pliki modeli, store, service i controller, ale celowo nie edytuje automatycznie `AppStore`, `AppService`, `main.go` ani migracji. Te miejsca są composition rootem i powinny być świadomie podpięte podczas implementacji.
 
-## 6. Typowy przepływ feature’a
+## 6. Typowy przepływ feature'a
 
 Dla nowego endpointu trzymaj się poniższego flow:
 
@@ -258,7 +264,7 @@ to transakcja powinna być w `store`, nie w kontrolerze.
 
 ### 7.6 Preload i mapping
 
-Store ma zwracać dane potrzebne use-case’owi. Jeśli odpowiedź HTTP wymaga przekształcenia, użyj mappera z `models/mappers.go` albo zbuduj output DTO w serwisie.
+Store ma zwracać dane potrzebne use-case'owi. Jeśli odpowiedź HTTP wymaga przekształcenia, użyj mappera z `models/mappers.go` albo zbuduj output DTO w serwisie.
 
 Nie wypychaj do kontrolera skomplikowanego składania odpowiedzi z wielu relacji.
 
@@ -295,7 +301,7 @@ Jeśli nie ma jawnej roli, template traktuje użytkownika jako `user`.
 
 Jeśli dana operacja wymaga language-aware odczytu z DB, kontroler przekazuje resolved language i candidates do `context.Context`, a store wybiera najlepsze tłumaczenie.
 
-To ważny wzorzec dla feature’ów opartych o translacje. Nie rozwiązuj tego lokalnie ad hoc w kontrolerze.
+To ważny wzorzec dla feature'ów opartych o translacje. Nie rozwiązuj tego lokalnie ad hoc w kontrolerze.
 
 ## 9. Background jobs i procesy asynchroniczne
 
@@ -336,7 +342,7 @@ Płatności pokazują istniejący wzorzec rozszerzalności:
 
 - wspólny minimalny interfejs `PaymentProvider`,
 - opcjonalne capability interfaces, np. `PaymentServiceInterface`, `SubscriptionServiceInterface`, `BillingPortalServiceInterface`,
-- kontroler resolve’uje providera po nazwie,
+- kontroler resolve'uje providera po nazwie,
 - następnie sprawdza capability przez type assertion.
 
 Tak samo warto projektować kolejne rozszerzalne integracje:
@@ -383,15 +389,15 @@ Nie rób tych rzeczy:
 - nie wkładaj logiki biznesowej do kontrolera,
 - nie wkładaj klienta zewnętrznego API do `store`,
 - nie odwołuj się do `echo.Context` w `services`,
-- nie rozbijaj małego feature’a na nadmiar interfejsów i pakietów,
+- nie rozbijaj małego feature'a na nadmiar interfejsów i pakietów,
 - nie buduj drugiego systemu DI obok `main.go`,
-- nie twórz “repository per entity” poza stylem już użytym w `store/`,
+- nie twórz "repository per entity" poza stylem już użytym w `store/`,
 - nie implementuj odpowiedzi HTTP w `services`,
 - nie mieszaj modeli DB z tymczasowym JSON-em bez jawnego DTO lub mappera,
 - nie pomijaj `context.Context`,
 - nie pomijaj ownership checków tam, gdzie endpoint działa na zasobach użytkownika.
 
-## 15. Praktyczny szablon nowego feature’a
+## 15. Praktyczny szablon nowego feature'a
 
 Nowy feature powinien wyglądać mniej więcej tak:
 
@@ -415,7 +421,7 @@ To repo jest pragmatyczne, więc AI powinno zachować obecny styl:
 - warstwy są ważne, ale bez przesadnego ceremony,
 - use-case i integracje siedzą razem w `services`,
 - `AppService` i `Datastore` są akceptowanym service locator-like kompromisem,
-- niektóre serwisy zwracają `interface{}`; nie trzeba tego na siłę przerabiać przy każdym change’u,
+- niektóre serwisy zwracają `interface{}`; nie trzeba tego na siłę przerabiać przy każdym change'u,
 - background jobs są częścią aplikacji, nie osobnym systemem.
 
 ## 17. Krótka checklista dla AI

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -56,22 +55,22 @@ type AdminConfig struct {
 }
 
 type DatabaseConfig struct {
-	Driver                     string `json:"driver"`
-	Host                       string `json:"host"`
-	User                       string `json:"user"`
-	Password                   string `json:"password"`
-	DbName                     string `json:"dbname"`
-	Port                       int    `json:"port"`
-	Charset                    string `json:"charset"`
-	SSLMode                    string `json:"sslmode"`
-	TimeZone                   string `json:"timezone"`
-	MaxOpenConns               int    `json:"max_open_conns"`
-	MaxIdleConns               int    `json:"max_idle_conns"`
-	ConnMaxLifetimeSeconds     int    `json:"conn_max_lifetime_seconds"`
-	ConnMaxIdleTimeSeconds     int    `json:"conn_max_idle_time_seconds"`
-	MigrationsDir              string `json:"migrations_dir"`
-	MigrationsTable            string `json:"migrations_table"`
-	DisableVersionedMigrations bool   `json:"disable_versioned_migrations"`
+	Driver                 string `json:"driver"`
+	Host                   string `json:"host"`
+	User                   string `json:"user"`
+	Password               string `json:"password"`
+	DbName                 string `json:"dbname"`
+	Port                   int    `json:"port"`
+	Charset                string `json:"charset"`
+	SSLMode                string `json:"sslmode"`
+	TimeZone               string `json:"timezone"`
+	MaxOpenConns           int    `json:"max_open_conns"`
+	MaxIdleConns           int    `json:"max_idle_conns"`
+	ConnMaxLifetimeSeconds int    `json:"conn_max_lifetime_seconds"`
+	ConnMaxIdleTimeSeconds int    `json:"conn_max_idle_time_seconds"`
+	AutoMigrate            *bool  `json:"auto_migrate"`
+	MigrationsDir          string `json:"migrations_dir"`
+	MigrationsTable        string `json:"migrations_table"`
 }
 
 type Config struct {
@@ -105,58 +104,11 @@ func LoadConfiguration(file string) Config {
 		configLogger.Fatal("problem parsing config file", zap.Error(err), zap.String("file", file))
 	}
 
-	config.ApplyEnv()
 	if err := config.Validate(); err != nil {
 		configLogger.Fatal("invalid configuration", zap.Error(err), zap.String("file", file))
 	}
 
 	return config
-}
-
-func (c *Config) ApplyEnv() {
-	setStringFromEnv(&c.AppName, "APP_NAME")
-	setStringFromEnv(&c.AuthDomain, "AUTH_DOMAIN")
-	setBoolFromEnv(&c.Prod, "APP_PROD")
-
-	setStringFromEnv(&c.Auth.Provider, "AUTH_PROVIDER")
-	setStringFromEnv(&c.Auth.Domain, "AUTH_DOMAIN")
-	setOptionalBoolFromEnv(&c.Auth.Enabled, "AUTH_ENABLED")
-	setOptionalBoolFromEnv(&c.RBAC.Enabled, "RBAC_ENABLED")
-	setOptionalBoolFromEnv(&c.Admin.Enabled, "ADMIN_ENABLED")
-	setStringFromEnv(&c.Admin.SecretKey, "ADMIN_SECRET_KEY")
-
-	setStringFromEnv(&c.Server.Host, "SERVER_HOST")
-	setIntFromEnv(&c.Server.Port, "SERVER_PORT")
-
-	setStringFromEnv(&c.Database.Driver, "DB_DRIVER")
-	setStringFromEnv(&c.Database.Host, "DB_HOST")
-	setStringFromEnv(&c.Database.User, "DB_USER")
-	setStringFromEnv(&c.Database.Password, "DB_PASSWORD")
-	setStringFromEnv(&c.Database.DbName, "DB_NAME")
-	setIntFromEnv(&c.Database.Port, "DB_PORT")
-	setStringFromEnv(&c.Database.Charset, "DB_CHARSET")
-	setStringFromEnv(&c.Database.SSLMode, "DB_SSLMODE")
-	setStringFromEnv(&c.Database.TimeZone, "DB_TIMEZONE")
-	setIntFromEnv(&c.Database.MaxOpenConns, "DB_MAX_OPEN_CONNS")
-	setIntFromEnv(&c.Database.MaxIdleConns, "DB_MAX_IDLE_CONNS")
-	setIntFromEnv(&c.Database.ConnMaxLifetimeSeconds, "DB_CONN_MAX_LIFETIME_SECONDS")
-	setIntFromEnv(&c.Database.ConnMaxIdleTimeSeconds, "DB_CONN_MAX_IDLE_TIME_SECONDS")
-	setStringFromEnv(&c.Database.MigrationsDir, "DB_MIGRATIONS_DIR")
-	setStringFromEnv(&c.Database.MigrationsTable, "DB_MIGRATIONS_TABLE")
-	setBoolFromEnv(&c.Database.DisableVersionedMigrations, "DB_DISABLE_VERSIONED_MIGRATIONS")
-
-	setStringFromEnv(&c.Observability.ServiceName, "OTEL_SERVICE_NAME")
-	setStringFromEnv(&c.Observability.ServiceVersion, "SERVICE_VERSION")
-	setStringFromEnv(&c.Observability.Environment, "APP_ENV")
-	setStringFromEnv(&c.Observability.Namespace, "METRICS_NAMESPACE")
-	setStringFromEnv(&c.Observability.TraceExporter, "TRACE_EXPORTER")
-	setStringFromEnv(&c.Observability.TraceOTLPEndpoint, "TRACE_OTLP_ENDPOINT")
-	setBoolFromEnv(&c.Observability.TraceOTLPInsecure, "TRACE_OTLP_INSECURE")
-	setIntFromEnv(&c.Observability.TraceOTLPTimeoutSeconds, "TRACE_OTLP_TIMEOUT_SECONDS")
-
-	setStringFromEnv(&c.Logging.Level, "LOG_LEVEL")
-	setBoolFromEnv(&c.Logging.FileEnabled, "LOG_FILE_ENABLED")
-	setStringFromEnv(&c.Logging.FileDir, "LOG_FILE_DIR")
 }
 
 func (c Config) Validate() error {
@@ -221,6 +173,10 @@ func (c Config) RBACEnabled() bool {
 
 func (c Config) AdminEnabled() bool {
 	return optionalBool(c.Admin.Enabled, strings.TrimSpace(c.Admin.SecretKey) != "")
+}
+
+func (c Config) AutoMigrateEnabled() bool {
+	return optionalBool(c.Database.AutoMigrate, true)
 }
 
 func optionalBool(value *bool, fallback bool) bool {
@@ -388,47 +344,4 @@ func NewDatabaseConnection(cfg Config) *gorm.DB {
 	}
 
 	return db
-}
-
-func setStringFromEnv(target *string, key string) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value != "" {
-		*target = value
-	}
-}
-
-func setIntFromEnv(target *int, key string) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		configLogger.Fatal("invalid integer environment value", zap.String("key", key), zap.String("value", value), zap.Error(err))
-	}
-	*target = parsed
-}
-
-func setBoolFromEnv(target *bool, key string) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		configLogger.Fatal("invalid boolean environment value", zap.String("key", key), zap.String("value", value), zap.Error(err))
-	}
-	*target = parsed
-}
-
-func setOptionalBoolFromEnv(target **bool, key string) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		configLogger.Fatal("invalid boolean environment value", zap.String("key", key), zap.String("value", value), zap.Error(err))
-	}
-	*target = &parsed
 }

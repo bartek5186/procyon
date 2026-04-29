@@ -44,9 +44,6 @@ func main() {
 	}
 
 	if configPath == "" {
-		configPath = os.Getenv("CONFIG_PATH")
-	}
-	if configPath == "" {
 		configPath = "config/config.json"
 	}
 

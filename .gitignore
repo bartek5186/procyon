@@ -3,3 +3,5 @@
 .env
 build/
 log/
+config/*.local.json
+config/*.prod.json
