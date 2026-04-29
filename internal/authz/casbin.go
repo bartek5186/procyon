@@ -39,11 +39,12 @@ var defaultRoleHierarchy = [][]string{
 }
 
 type CasbinAuthorizer struct {
-	e  *casbin.Enforcer
-	mu sync.Mutex
+	e           *casbin.Enforcer
+	mu          sync.Mutex
+	defaultRole string
 }
 
-func NewCasbinAuthorizer(db *gorm.DB) (*CasbinAuthorizer, error) {
+func NewCasbinAuthorizer(db *gorm.DB, defaultRole string, adminIdentityIDs []string) (*CasbinAuthorizer, error) {
 	adapter, err := gormadapter.NewAdapterByDB(db)
 	if err != nil {
 		return nil, err
@@ -62,8 +63,14 @@ func NewCasbinAuthorizer(db *gorm.DB) (*CasbinAuthorizer, error) {
 		return nil, err
 	}
 
-	out := &CasbinAuthorizer{e: e}
+	out := &CasbinAuthorizer{
+		e:           e,
+		defaultRole: NormalizeRoleOrDefault(defaultRole),
+	}
 	if err := out.ensureBasePolicy(); err != nil {
+		return nil, err
+	}
+	if err := out.ensureBootstrapAdmins(adminIdentityIDs); err != nil {
 		return nil, err
 	}
 
@@ -102,6 +109,32 @@ func (a *CasbinAuthorizer) ensureBasePolicy() error {
 	return nil
 }
 
+func (a *CasbinAuthorizer) ensureBootstrapAdmins(identityIDs []string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	changed := false
+	for _, identityID := range identityIDs {
+		identityID = strings.TrimSpace(identityID)
+		if identityID == "" {
+			continue
+		}
+
+		ok, err := a.e.AddRoleForUser(identityID, RoleAdmin)
+		if err != nil {
+			return err
+		}
+		if ok {
+			changed = true
+		}
+	}
+
+	if changed {
+		return a.e.SavePolicy()
+	}
+	return nil
+}
+
 func (a *CasbinAuthorizer) Can(_ context.Context, userID, obj, act string) (bool, error) {
 	userID = strings.TrimSpace(userID)
 	obj = strings.TrimSpace(obj)
@@ -114,54 +147,64 @@ func (a *CasbinAuthorizer) Can(_ context.Context, userID, obj, act string) (bool
 	return a.e.Enforce(userID, obj, act)
 }
 
-func (a *CasbinAuthorizer) EnsureUserRole(ctx context.Context, userID, role string) error {
-	return a.SetUserRole(ctx, userID, role)
-}
-
-func (a *CasbinAuthorizer) SetUserRole(_ context.Context, userID, role string) error {
+func (a *CasbinAuthorizer) EnsureDefaultRole(_ context.Context, userID string) (string, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return nil
+		return "", nil
 	}
-
-	normalizedRole := NormalizeRoleOrDefault(role)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	currentRoles, err := a.e.GetRolesForUser(userID)
 	if err != nil {
+		return "", err
+	}
+	fallbackRole := ""
+	for _, currentRole := range currentRoles {
+		if role, ok := NormalizeRole(currentRole); ok {
+			if role == RoleAdmin {
+				return role, nil
+			}
+			if fallbackRole == "" {
+				fallbackRole = role
+			}
+		}
+	}
+	if fallbackRole != "" {
+		return fallbackRole, nil
+	}
+
+	role := a.defaultRole
+	if role == "" {
+		return "", nil
+	}
+	ok, err := a.e.AddRoleForUser(userID, role)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return role, a.e.SavePolicy()
+	}
+
+	return role, nil
+}
+
+func (a *CasbinAuthorizer) AddUserRole(_ context.Context, userID, role string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	role = NormalizeRoleOrDefault(role)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	ok, err := a.e.AddRoleForUser(userID, role)
+	if err != nil {
 		return err
 	}
-
-	changed := false
-	hasTarget := false
-	for _, currentRole := range currentRoles {
-		if currentRole == normalizedRole {
-			hasTarget = true
-			continue
-		}
-
-		ok, err := a.e.DeleteRoleForUser(userID, currentRole)
-		if err != nil {
-			return err
-		}
-		if ok {
-			changed = true
-		}
-	}
-
-	if !hasTarget {
-		ok, err := a.e.AddRoleForUser(userID, normalizedRole)
-		if err != nil {
-			return err
-		}
-		if ok {
-			changed = true
-		}
-	}
-
-	if changed {
+	if ok {
 		return a.e.SavePolicy()
 	}
 	return nil

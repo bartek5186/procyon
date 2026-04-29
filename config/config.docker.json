@@ -12,7 +12,9 @@
     "domain": "http://host.docker.internal:4433"
   },
   "rbac": {
-    "enabled": true
+    "enabled": true,
+    "default_role": "user",
+    "admin_identity_ids": []
   },
   "languages": ["pl", "en"],
   "domains": [

@@ -35,8 +35,8 @@ func (m *CasbinRBAC) Require(obj, act string) echo.MiddlewareFunc {
 				return apierr.ReplyUnauthorized(c, "unauthorized")
 			}
 
-			role := authz.RoleFromSession(session)
-			if err := m.authorizer.EnsureUserRole(c.Request().Context(), userID, role); err != nil {
+			role, err := m.authorizer.EnsureDefaultRole(c.Request().Context(), userID)
+			if err != nil {
 				return apierr.ReplyInternalCode(c, "authorization_sync_failed", "authorization sync failed", err)
 			}
 

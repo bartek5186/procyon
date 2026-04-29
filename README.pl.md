@@ -94,7 +94,7 @@ Template pozwala wyłączyć moduły infrastrukturalne bez usuwania kodu:
 ```json
 {
   "auth": { "enabled": false, "provider": "kratos", "domain": "" },
-  "rbac": { "enabled": false },
+  "rbac": { "enabled": false, "default_role": "user", "admin_identity_ids": [] },
   "admin": { "enabled": false, "secret_key": "" }
 }
 ```
@@ -104,6 +104,9 @@ Zasady:
 - `rbac.enabled=false` zostawia auth bez sprawdzania Casbina
 - `admin.enabled=false` nie rejestruje tras `/admin/*` chronionych `X-Admin-Key`
 - `rbac.enabled=true` wymaga `auth.enabled=true`
+- Kratos daje do RBAC tylko identity ID; role i polityki użytkownika są trzymane w Casbin/app DB
+- `rbac.default_role` jest nadawane nowej zalogowanej identity, jeśli nie ma jeszcze roli w Casbinie
+- `rbac.admin_identity_ids` bootstrapuje początkowych adminów w Casbinie
 
 ## Migracje
 
@@ -212,7 +215,7 @@ Co robi skrypt:
 - metryki są zapisywane przez instrumenty OpenTelemetry i wystawiane na endpointzie `/metrics` zgodnym z Prometheusem
 - kod biznesowy może zapisywać zdarzenia domenowe przez `telemetry.BusinessMetrics`
 - eksport trace wspiera `log`, `none` i `otlp_grpc`; eksport metryk OTLP wspiera `none` i `otlp_grpc`
-- rola RBAC jest brana z Kratos `identity.metadata_public.role` albo `identity.traits.role`, a domyślnie ustawiany jest `user`
+- RBAC używa Kratos identity ID oraz ról/polityk Casbina trzymanych w app DB; pola roli w Kratos traits albo metadata nie są traktowane jako zaufane
 
 Zobacz [METRICS.md](METRICS.md), żeby sprawdzić konfigurację metryk i przykłady metryk biznesowych.
 

@@ -291,8 +291,9 @@ Kontroler może odczytać sesję przez:
 sess, ok := middleware.SessionFromContext(c)
 ```
 
-Rola do RBAC jest rozwiązywana z Kratos `identity.metadata_public.role` albo `identity.traits.role`.
-Jeśli nie ma jawnej roli, template traktuje użytkownika jako `user`.
+RBAC nie ufa rolom z Kratos `traits`, `metadata_public` ani `metadata_admin`. Kratos dostarcza tylko identity ID, a role i polityki są rozwiązywane przez Casbin z app DB.
+
+`rbac.default_role` jest nadawane nowej zalogowanej identity, jeśli nie ma jeszcze roli w Casbinie. `rbac.admin_identity_ids` służy do bootstrapu początkowych adminów.
 
 ### Language
 

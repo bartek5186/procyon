@@ -1,38 +1,29 @@
 package authz
 
-import (
-	"testing"
+import "testing"
 
-	ory "github.com/ory/client-go"
-)
-
-func TestRoleFromSessionUsesMetadataPublicFirst(t *testing.T) {
-	session := &ory.Session{
-		Identity: &ory.Identity{
-			Id: "user-1",
-			MetadataPublic: map[string]interface{}{
-				"role": "admin",
-			},
-			Traits: map[string]interface{}{
-				"role": "user",
-			},
-		},
+func TestNormalizeRole(t *testing.T) {
+	tests := map[string]string{
+		"user":    RoleUser,
+		"member":  RoleUser,
+		"regular": RoleUser,
+		"admin":   RoleAdmin,
+		" ADMIN ": RoleAdmin,
 	}
 
-	if got, want := RoleFromSession(session), RoleAdmin; got != want {
-		t.Fatalf("unexpected role: got %q want %q", got, want)
+	for raw, want := range tests {
+		got, ok := NormalizeRole(raw)
+		if !ok {
+			t.Fatalf("expected %q to normalize", raw)
+		}
+		if got != want {
+			t.Fatalf("unexpected normalized role for %q: got %q want %q", raw, got, want)
+		}
 	}
 }
 
-func TestRoleFromSessionFallsBackToUser(t *testing.T) {
-	session := &ory.Session{
-		Identity: &ory.Identity{
-			Id:     "user-2",
-			Traits: map[string]interface{}{"name": "No role"},
-		},
-	}
-
-	if got, want := RoleFromSession(session), RoleUser; got != want {
-		t.Fatalf("unexpected role: got %q want %q", got, want)
+func TestNormalizeRoleRejectsUnknown(t *testing.T) {
+	if role, ok := NormalizeRole("owner"); ok || role != "" {
+		t.Fatalf("expected unknown role to be rejected, got role=%q ok=%v", role, ok)
 	}
 }

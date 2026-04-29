@@ -47,7 +47,9 @@ type AuthConfig struct {
 }
 
 type RBACConfig struct {
-	Enabled *bool `json:"enabled"`
+	Enabled          *bool    `json:"enabled"`
+	DefaultRole      string   `json:"default_role"`
+	AdminIdentityIDs []string `json:"admin_identity_ids"`
 }
 
 type AdminConfig struct {

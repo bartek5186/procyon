@@ -60,7 +60,7 @@ func main() {
 	var casbinAuthz *authz.CasbinAuthorizer
 	if config.RBACEnabled() {
 		var err error
-		casbinAuthz, err = authz.NewCasbinAuthorizer(db)
+		casbinAuthz, err = authz.NewCasbinAuthorizer(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs)
 		if err != nil {
 			logger.GetLogger().Fatal("failed to initialize casbin", zap.Error(err))
 		}

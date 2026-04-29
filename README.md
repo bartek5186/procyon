@@ -94,7 +94,7 @@ The template can disable infrastructure modules without removing code:
 ```json
 {
   "auth": { "enabled": false, "provider": "kratos", "domain": "" },
-  "rbac": { "enabled": false },
+  "rbac": { "enabled": false, "default_role": "user", "admin_identity_ids": [] },
   "admin": { "enabled": false, "secret_key": "" }
 }
 ```
@@ -104,6 +104,9 @@ Rules:
 - `rbac.enabled=false` keeps auth without Casbin checks
 - `admin.enabled=false` does not register `/admin/*` routes protected by `X-Admin-Key`
 - `rbac.enabled=true` requires `auth.enabled=true`
+- Kratos provides only the identity ID for RBAC; user roles and policies are stored in Casbin/app DB
+- `rbac.default_role` is assigned to new authenticated identities when they have no Casbin role yet
+- `rbac.admin_identity_ids` bootstraps initial admin identities in Casbin
 
 ## Migrations
 
@@ -212,7 +215,7 @@ What it does:
 - metrics are recorded with OpenTelemetry instruments and exposed on the Prometheus-compatible `/metrics` endpoint
 - business code can record domain events through `telemetry.BusinessMetrics`
 - OTLP trace export supports `log`, `none` and `otlp_grpc`; OTLP metrics export supports `none` and `otlp_grpc`
-- RBAC role is resolved from Kratos `identity.metadata_public.role` or `identity.traits.role`, with `user` as default
+- RBAC uses Kratos identity ID plus Casbin roles/policies stored in the app DB; role fields in Kratos traits or metadata are not trusted
 
 See [METRICS.md](METRICS.md) for metrics configuration and business metric examples.
 
