@@ -209,9 +209,12 @@ Co robi skrypt:
 - logi są w JSON i domyślnie lecą na stdout, więc nadają się pod Docker, Alloy i Loki
 - zapis do plików jest opcjonalny przez `logging.file_enabled=true`
 - requesty HTTP są logowane z `request_id`, `trace_id` i `span_id`
-- metryki wystawiają prawdziwy histogram latency z exemplarami
-- eksport trace wspiera `log`, `none` i `otlp_grpc`
+- metryki są zapisywane przez instrumenty OpenTelemetry i wystawiane na endpointzie `/metrics` zgodnym z Prometheusem
+- kod biznesowy może zapisywać zdarzenia domenowe przez `telemetry.BusinessMetrics`
+- eksport trace wspiera `log`, `none` i `otlp_grpc`; eksport metryk OTLP wspiera `none` i `otlp_grpc`
 - rola RBAC jest brana z Kratos `identity.metadata_public.role` albo `identity.traits.role`, a domyślnie ustawiany jest `user`
+
+Zobacz [METRICS.md](METRICS.md), żeby sprawdzić konfigurację metryk i przykłady metryk biznesowych.
 
 ## Co podmienić w nowym projekcie
 

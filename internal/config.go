@@ -27,6 +27,7 @@ type ObservabilityConfig struct {
 	InfoPath                string            `json:"info_path"`
 	TraceSampleRatio        float64           `json:"trace_sample_ratio"`
 	TraceExporter           string            `json:"trace_exporter"`
+	MetricsExporter         string            `json:"metrics_exporter"`
 	TraceOTLPEndpoint       string            `json:"trace_otlp_endpoint"`
 	TraceOTLPInsecure       bool              `json:"trace_otlp_insecure"`
 	TraceOTLPHeaders        map[string]string `json:"trace_otlp_headers"`
@@ -240,6 +241,9 @@ func (cfg ObservabilityConfig) WithDefaults(appVersion, appName string, prod boo
 	}
 	if strings.TrimSpace(cfg.TraceExporter) == "" {
 		cfg.TraceExporter = "log"
+	}
+	if strings.TrimSpace(cfg.MetricsExporter) == "" {
+		cfg.MetricsExporter = "none"
 	}
 	if cfg.TraceOTLPTimeoutSeconds <= 0 {
 		cfg.TraceOTLPTimeoutSeconds = 10

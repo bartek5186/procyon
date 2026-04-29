@@ -33,6 +33,7 @@
     "info_path": "/info",
     "trace_sample_ratio": 1,
     "trace_exporter": "log",
+    "metrics_exporter": "none",
     "trace_otlp_endpoint": "tempo:4317",
     "trace_otlp_insecure": true,
     "trace_otlp_headers": {},

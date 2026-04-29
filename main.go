@@ -78,7 +78,7 @@ func main() {
 	}
 
 	appStore := store.NewAppStore(db, &config)
-	appService := services.NewAppService(appStore, logger.GetLogger())
+	appService := services.NewAppService(appStore, logger.GetLogger(), obs.BusinessMetrics())
 	helloController := controllers.NewHelloController(appService, logger.GetLogger())
 
 	var kratosAuth *mid.KratosAuth

@@ -14,8 +14,10 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.31.0"
@@ -32,6 +34,7 @@ type Manager struct {
 	logger         *zap.Logger
 	tracer         oteltrace.Tracer
 	tracerProvider *sdktrace.TracerProvider
+	meterProvider  *sdkmetric.MeterProvider
 	sqlDB          *sql.DB
 	metrics        *metricsStore
 }
@@ -72,13 +75,45 @@ func New(ctx context.Context, cfg internal.ObservabilityConfig, logger *zap.Logg
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
+	manualMetricReader := sdkmetric.NewManualReader()
+	metricReaders := []sdkmetric.Reader{manualMetricReader}
+	metricExporter, err := newMetricExporter(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if metricExporter != nil {
+		metricReaders = append(metricReaders, sdkmetric.NewPeriodicReader(metricExporter))
+	}
+
+	meterOptions := []sdkmetric.Option{
+		sdkmetric.WithResource(res),
+		sdkmetric.WithView(sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "http_request_duration_seconds"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: defaultHTTPRequestDurationBuckets,
+				NoMinMax:   true,
+			}},
+		)),
+	}
+	for _, reader := range metricReaders {
+		meterOptions = append(meterOptions, sdkmetric.WithReader(reader))
+	}
+	meterProvider := sdkmetric.NewMeterProvider(meterOptions...)
+	otel.SetMeterProvider(meterProvider)
+
+	metrics, err := newMetricsStore(cfg, manualMetricReader, meterProvider.Meter(httpInstrumentationName), sqlDB)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Manager{
 		config:         cfg,
 		logger:         logger,
 		tracer:         tracerProvider.Tracer(httpInstrumentationName),
 		tracerProvider: tracerProvider,
+		meterProvider:  meterProvider,
 		sqlDB:          sqlDB,
-		metrics:        newMetricsStore(cfg, sqlDB),
+		metrics:        metrics,
 	}, nil
 }
 
@@ -113,6 +148,33 @@ func newOTLPGRPCTraceExporter(ctx context.Context, cfg internal.ObservabilityCon
 	}
 
 	return otlptracegrpc.New(ctx, options...)
+}
+
+func newMetricExporter(ctx context.Context, cfg internal.ObservabilityConfig) (sdkmetric.Exporter, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.MetricsExporter)) {
+	case "", "none":
+		return nil, nil
+	case "otlp_grpc":
+		endpoint := strings.TrimSpace(cfg.TraceOTLPEndpoint)
+		if endpoint == "" {
+			return nil, fmt.Errorf("trace_otlp_endpoint is required when metrics_exporter=otlp_grpc")
+		}
+
+		options := []otlpmetricgrpc.Option{
+			otlpmetricgrpc.WithEndpoint(endpoint),
+			otlpmetricgrpc.WithTimeout(time.Duration(cfg.TraceOTLPTimeoutSeconds) * time.Second),
+		}
+		if cfg.TraceOTLPInsecure {
+			options = append(options, otlpmetricgrpc.WithInsecure())
+		}
+		if len(cfg.TraceOTLPHeaders) > 0 {
+			options = append(options, otlpmetricgrpc.WithHeaders(cfg.TraceOTLPHeaders))
+		}
+
+		return otlpmetricgrpc.New(ctx, options...)
+	default:
+		return nil, fmt.Errorf("unsupported metrics exporter %q", cfg.MetricsExporter)
+	}
 }
 
 type rateLimitedOTelErrorHandler struct {
@@ -187,19 +249,15 @@ func (m *Manager) Middleware() echo.MiddlewareFunc {
 
 			traceID := ""
 			spanID := ""
-			exemplarTraceID := ""
 			if sc := span.SpanContext(); sc.IsValid() {
 				traceID = sc.TraceID().String()
 				spanID = sc.SpanID().String()
 				c.Response().Header().Set("X-Trace-ID", traceID)
-				if sc.IsSampled() {
-					exemplarTraceID = traceID
-				}
 			}
 
 			startedAt := time.Now()
-			m.metrics.IncInFlight()
-			defer m.metrics.DecInFlight()
+			m.metrics.IncInFlight(ctx)
+			defer m.metrics.DecInFlight(ctx)
 
 			err := next(c)
 			if err != nil {
@@ -229,7 +287,7 @@ func (m *Manager) Middleware() echo.MiddlewareFunc {
 				span.SetStatus(codes.Error, statusLabel)
 			}
 
-			m.metrics.ObserveRequest(req.Method, finalRoute, statusCode, duration, exemplarTraceID)
+			m.metrics.ObserveRequest(ctx, req.Method, finalRoute, statusCode, duration)
 			m.logHTTPRequest(c, finalRoute, statusCode, duration, traceID, spanID, err)
 
 			return nil
@@ -281,6 +339,13 @@ func (m *Manager) logHTTPRequest(c echo.Context, route string, statusCode int, d
 
 func (m *Manager) MetricsHandler() http.Handler {
 	return m.metrics.Handler()
+}
+
+func (m *Manager) BusinessMetrics() *BusinessMetrics {
+	if m == nil || m.metrics == nil {
+		return nil
+	}
+	return m.metrics.business
 }
 
 func (m *Manager) HealthHandler(c echo.Context) error {
@@ -336,6 +401,7 @@ func (m *Manager) InfoHandler(c echo.Context) error {
 			"ready_path":                 m.config.ReadyPath,
 			"info_path":                  m.config.InfoPath,
 			"trace_exporter":             m.config.TraceExporter,
+			"metrics_exporter":           m.config.MetricsExporter,
 			"trace_sample_ratio":         m.config.TraceSampleRatio,
 			"trace_otlp_endpoint":        m.config.TraceOTLPEndpoint,
 			"trace_otlp_insecure":        m.config.TraceOTLPInsecure,
@@ -346,10 +412,16 @@ func (m *Manager) InfoHandler(c echo.Context) error {
 }
 
 func (m *Manager) Shutdown(ctx context.Context) error {
-	if m.tracerProvider == nil {
-		return nil
+	var err error
+	if m.tracerProvider != nil {
+		err = m.tracerProvider.Shutdown(ctx)
 	}
-	return m.tracerProvider.Shutdown(ctx)
+	if m.meterProvider != nil {
+		if meterErr := m.meterProvider.Shutdown(ctx); meterErr != nil && err == nil {
+			err = meterErr
+		}
+	}
+	return err
 }
 
 func attributesToMap(attrs []attribute.KeyValue) map[string]any {

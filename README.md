@@ -209,9 +209,12 @@ What it does:
 - logs are JSON and go to stdout by default, which is suitable for Docker, Alloy and Loki
 - file logging is optional through `logging.file_enabled=true`
 - HTTP requests are traced and logged with `request_id`, `trace_id` and `span_id`
-- metrics expose a real latency histogram with exemplars
-- OTLP trace export supports `log`, `none` and `otlp_grpc`
+- metrics are recorded with OpenTelemetry instruments and exposed on the Prometheus-compatible `/metrics` endpoint
+- business code can record domain events through `telemetry.BusinessMetrics`
+- OTLP trace export supports `log`, `none` and `otlp_grpc`; OTLP metrics export supports `none` and `otlp_grpc`
 - RBAC role is resolved from Kratos `identity.metadata_public.role` or `identity.traits.role`, with `user` as default
+
+See [METRICS.md](METRICS.md) for metrics configuration and business metric examples.
 
 ## What to replace in a new project
 

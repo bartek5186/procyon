@@ -9,19 +9,36 @@ import (
 	"time"
 
 	"github.com/bartek5186/procyon/internal"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
-func TestMetricsHandlerRendersOpenMetricsHistogramExemplars(t *testing.T) {
+func TestMetricsHandlerRendersOpenMetricsFromOTelReader(t *testing.T) {
 	namespace := "procyon"
-	store := newMetricsStore(internal.ObservabilityConfig{
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(reader),
+		sdkmetric.WithView(sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "http_request_duration_seconds"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: defaultHTTPRequestDurationBuckets,
+				NoMinMax:   true,
+			}},
+		)),
+	)
+
+	store, err := newMetricsStore(internal.ObservabilityConfig{
 		ServiceName:    "procyon",
 		ServiceVersion: "test",
 		Environment:    "test",
 		Namespace:      namespace,
-	}, new(sql.DB))
+	}, reader, provider.Meter(httpInstrumentationName), new(sql.DB))
+	if err != nil {
+		t.Fatalf("new metrics store: %v", err)
+	}
 
-	store.ObserveRequest(http.MethodGet, "/hello", http.StatusOK, 250*time.Millisecond, "trace-finite")
-	store.ObserveRequest(http.MethodGet, "/hello", http.StatusOK, 12*time.Second, "trace-slow")
+	ctx := t.Context()
+	store.ObserveRequest(ctx, http.MethodGet, "/hello", http.StatusOK, 250*time.Millisecond)
+	store.ObserveRequest(ctx, http.MethodGet, "/hello", http.StatusOK, 12*time.Second)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -33,11 +50,14 @@ func TestMetricsHandlerRendersOpenMetricsHistogramExemplars(t *testing.T) {
 
 	body := recorder.Body.String()
 	metricName := sanitizeMetricName(namespace) + "_http_request_duration_seconds_bucket"
-	if !strings.Contains(body, metricName+`{method="GET",route="/hello",status_code="200",le="0.25"} 1 # {trace_id="trace-finite"} 0.25`) {
-		t.Fatalf("expected finite bucket exemplar in body:\n%s", body)
+	if !strings.Contains(body, metricName+`{method="GET",route="/hello",status_code="200",le="0.25"} 1`) {
+		t.Fatalf("expected finite bucket in body:\n%s", body)
 	}
-	if !strings.Contains(body, metricName+`{method="GET",route="/hello",status_code="200",le="+Inf"} 2 # {trace_id="trace-slow"} 12.0`) {
-		t.Fatalf("expected +Inf bucket exemplar in body:\n%s", body)
+	if !strings.Contains(body, metricName+`{method="GET",route="/hello",status_code="200",le="+Inf"} 2`) {
+		t.Fatalf("expected +Inf bucket in body:\n%s", body)
+	}
+	if !strings.Contains(body, sanitizeMetricName(namespace)+`_http_requests_total{method="GET",route="/hello",status_code="200"} 2`) {
+		t.Fatalf("expected request counter in body:\n%s", body)
 	}
 	if !strings.HasSuffix(body, "# EOF\n") {
 		t.Fatalf("expected OpenMetrics EOF terminator, body:\n%s", body)

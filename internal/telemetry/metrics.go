@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -10,11 +11,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/bartek5186/procyon/internal"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 var defaultHTTPRequestDurationBuckets = []float64{
@@ -31,226 +33,341 @@ var defaultHTTPRequestDurationBuckets = []float64{
 	10,
 }
 
-type httpMetricKey struct {
-	Method     string
-	Route      string
-	StatusCode string
-}
-
-type httpMetricValue struct {
-	Requests             uint64
-	DurationSecondsSum   float64
-	DurationBucketCounts []uint64
-	DurationExemplars    []histogramExemplar
-}
-
-type histogramExemplar struct {
-	TraceID string
-	Value   float64
-}
-
 type metricsStore struct {
-	config          internal.ObservabilityConfig
-	sqlDB           *sql.DB
-	startedAt       time.Time
-	inFlight        atomic.Int64
-	durationBuckets []float64
-	mu              sync.RWMutex
-	httpMetrics     map[httpMetricKey]*httpMetricValue
+	config internal.ObservabilityConfig
+	reader metricReader
+	sqlDB  *sql.DB
+	start  time.Time
+
+	httpRequests metric.Int64Counter
+	httpDuration metric.Float64Histogram
+	inFlight     metric.Int64UpDownCounter
+	business     *BusinessMetrics
 }
 
-func newMetricsStore(cfg internal.ObservabilityConfig, sqlDB *sql.DB) *metricsStore {
-	return &metricsStore{
-		config:          cfg,
-		sqlDB:           sqlDB,
-		startedAt:       time.Now().UTC(),
-		durationBuckets: append([]float64(nil), defaultHTTPRequestDurationBuckets...),
-		httpMetrics:     make(map[httpMetricKey]*httpMetricValue),
-	}
+type metricReader interface {
+	Collect(context.Context, *metricdata.ResourceMetrics) error
 }
 
-func (m *metricsStore) IncInFlight() {
-	m.inFlight.Add(1)
+type BusinessMetrics struct {
+	events metric.Int64Counter
+	values metric.Float64Histogram
 }
 
-func (m *metricsStore) DecInFlight() {
-	m.inFlight.Add(-1)
+func newMetricsStore(cfg internal.ObservabilityConfig, reader metricReader, meter metric.Meter, sqlDB *sql.DB) (*metricsStore, error) {
+	httpRequests, err := meter.Int64Counter(
+		"http_requests_total",
+		metric.WithDescription("Total number of HTTP requests served."),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	httpDuration, err := meter.Float64Histogram(
+		"http_request_duration_seconds",
+		metric.WithDescription("HTTP request latency histogram in seconds."),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	inFlight, err := meter.Int64UpDownCounter(
+		"http_requests_in_flight",
+		metric.WithDescription("Current number of in-flight HTTP requests."),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	business, err := newBusinessMetrics(meter)
+	if err != nil {
+		return nil, err
+	}
+
+	store := &metricsStore{
+		config:       cfg,
+		reader:       reader,
+		sqlDB:        sqlDB,
+		start:        time.Now().UTC(),
+		httpRequests: httpRequests,
+		httpDuration: httpDuration,
+		inFlight:     inFlight,
+		business:     business,
+	}
+
+	if err := store.registerRuntimeCallbacks(meter); err != nil {
+		return nil, err
+	}
+
+	return store, nil
 }
 
-func (m *metricsStore) ObserveRequest(method, route string, statusCode int, duration time.Duration, traceID string) {
-	key := httpMetricKey{
-		Method:     method,
-		Route:      route,
-		StatusCode: strconv.Itoa(statusCode),
+func newBusinessMetrics(meter metric.Meter) (*BusinessMetrics, error) {
+	events, err := meter.Int64Counter(
+		"business_events_total",
+		metric.WithDescription("Business domain events recorded by application code."),
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	seconds := duration.Seconds()
-	bucketIndex := m.durationBucketIndex(seconds)
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	value := m.httpMetrics[key]
-	if value == nil {
-		value = &httpMetricValue{
-			DurationBucketCounts: make([]uint64, len(m.durationBuckets)),
-			DurationExemplars:    make([]histogramExemplar, len(m.durationBuckets)+1),
-		}
-		m.httpMetrics[key] = value
+	values, err := meter.Float64Histogram(
+		"business_value",
+		metric.WithDescription("Business domain values recorded by application code."),
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	value.Requests++
-	value.DurationSecondsSum += seconds
-	if bucketIndex < len(m.durationBuckets) {
-		value.DurationBucketCounts[bucketIndex]++
+	return &BusinessMetrics{events: events, values: values}, nil
+}
+
+func (m *BusinessMetrics) Event(ctx context.Context, name string, attrs ...attribute.KeyValue) {
+	if m == nil || m.events == nil {
+		return
 	}
-	if traceID != "" {
-		value.DurationExemplars[bucketIndex] = histogramExemplar{
-			TraceID: traceID,
-			Value:   seconds,
-		}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "unknown"
 	}
+	attrs = append([]attribute.KeyValue{attribute.String("event", name)}, attrs...)
+	m.events.Add(ctx, 1, metric.WithAttributes(attrs...))
+}
+
+func (m *BusinessMetrics) Value(ctx context.Context, name string, value float64, attrs ...attribute.KeyValue) {
+	if m == nil || m.values == nil {
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "unknown"
+	}
+	attrs = append([]attribute.KeyValue{attribute.String("name", name)}, attrs...)
+	m.values.Record(ctx, value, metric.WithAttributes(attrs...))
+}
+
+func (m *metricsStore) IncInFlight(ctx context.Context) {
+	m.inFlight.Add(ctx, 1)
+}
+
+func (m *metricsStore) DecInFlight(ctx context.Context) {
+	m.inFlight.Add(ctx, -1)
+}
+
+func (m *metricsStore) ObserveRequest(ctx context.Context, method, route string, statusCode int, duration time.Duration) {
+	attrs := []attribute.KeyValue{
+		attribute.String("method", method),
+		attribute.String("route", route),
+		attribute.String("status_code", strconv.Itoa(statusCode)),
+	}
+
+	m.httpRequests.Add(ctx, 1, metric.WithAttributes(attrs...))
+	m.httpDuration.Record(ctx, duration.Seconds(), metric.WithAttributes(attrs...))
 }
 
 func (m *metricsStore) Handler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/openmetrics-text; version=0.0.1; charset=utf-8")
-		_, _ = io.WriteString(w, m.Render())
+		if err := m.Render(r.Context(), w); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 }
 
-func (m *metricsStore) Render() string {
-	var out strings.Builder
-	namespace := sanitizeMetricName(m.config.Namespace)
-
-	writeHelpAndType(&out, metricName(namespace, "build_info"), "Static build and runtime metadata.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "build_info"), []metricLabel{
-		{Key: "service", Value: m.config.ServiceName},
-		{Key: "version", Value: m.config.ServiceVersion},
-		{Key: "environment", Value: m.config.Environment},
-		{Key: "go_version", Value: runtime.Version()},
-	}, "1")
-
-	writeHelpAndType(&out, metricName(namespace, "http_requests_in_flight"), "Current number of in-flight HTTP requests.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "http_requests_in_flight"), nil, strconv.FormatInt(m.inFlight.Load(), 10))
-
-	writeHelpAndType(&out, metricName(namespace, "http_requests_total"), "Total number of HTTP requests served.", "counter")
-	writeHelpAndType(&out, metricName(namespace, "http_request_duration_seconds"), "HTTP request latency histogram in seconds.", "histogram")
-	for _, key := range m.sortedHTTPMetricKeys() {
-		value := m.httpMetricValue(key)
-		labels := []metricLabel{
-			{Key: "method", Value: key.Method},
-			{Key: "route", Value: key.Route},
-			{Key: "status_code", Value: key.StatusCode},
-		}
-
-		writeMetricSample(&out, metricName(namespace, "http_requests_total"), labels, strconv.FormatUint(value.Requests, 10))
-
-		var cumulative uint64
-		for idx, upperBound := range m.durationBuckets {
-			cumulative += value.DurationBucketCounts[idx]
-			writeMetricSampleWithExemplar(
-				&out,
-				metricName(namespace, "http_request_duration_seconds_bucket"),
-				appendMetricLabel(labels, "le", formatOpenMetricsFloat(upperBound)),
-				strconv.FormatUint(cumulative, 10),
-				value.histogramBucketExemplar(idx),
-			)
-		}
-
-		writeMetricSampleWithExemplar(
-			&out,
-			metricName(namespace, "http_request_duration_seconds_bucket"),
-			appendMetricLabel(labels, "le", "+Inf"),
-			strconv.FormatUint(value.Requests, 10),
-			value.histogramBucketExemplar(len(m.durationBuckets)),
-		)
-		writeMetricSample(&out, metricName(namespace, "http_request_duration_seconds_sum"), labels, formatOpenMetricsFloat(value.DurationSecondsSum))
-		writeMetricSample(&out, metricName(namespace, "http_request_duration_seconds_count"), labels, strconv.FormatUint(value.Requests, 10))
+func (m *metricsStore) Render(ctx context.Context, out io.Writer) error {
+	var rm metricdata.ResourceMetrics
+	if err := m.reader.Collect(ctx, &rm); err != nil {
+		return err
 	}
 
-	stats := m.sqlDB.Stats()
-	writeHelpAndType(&out, metricName(namespace, "db_connections_open"), "Open database connections.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "db_connections_open"), nil, strconv.Itoa(stats.OpenConnections))
-	writeHelpAndType(&out, metricName(namespace, "db_connections_in_use"), "Database connections currently in use.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "db_connections_in_use"), nil, strconv.Itoa(stats.InUse))
-	writeHelpAndType(&out, metricName(namespace, "db_connections_idle"), "Idle database connections.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "db_connections_idle"), nil, strconv.Itoa(stats.Idle))
-	writeHelpAndType(&out, metricName(namespace, "db_wait_count_total"), "Total waits for a database connection.", "counter")
-	writeMetricSample(&out, metricName(namespace, "db_wait_count_total"), nil, strconv.FormatInt(stats.WaitCount, 10))
-	writeHelpAndType(&out, metricName(namespace, "db_wait_duration_seconds_total"), "Total time blocked waiting for a database connection.", "counter")
-	writeMetricSample(&out, metricName(namespace, "db_wait_duration_seconds_total"), nil, formatOpenMetricsFloat(stats.WaitDuration.Seconds()))
-	writeHelpAndType(&out, metricName(namespace, "db_max_idle_closed_total"), "Connections closed due to idle limit.", "counter")
-	writeMetricSample(&out, metricName(namespace, "db_max_idle_closed_total"), nil, strconv.FormatInt(stats.MaxIdleClosed, 10))
-	writeHelpAndType(&out, metricName(namespace, "db_max_idle_time_closed_total"), "Connections closed due to max idle time.", "counter")
-	writeMetricSample(&out, metricName(namespace, "db_max_idle_time_closed_total"), nil, strconv.FormatInt(stats.MaxIdleTimeClosed, 10))
-	writeHelpAndType(&out, metricName(namespace, "db_max_lifetime_closed_total"), "Connections closed due to max lifetime.", "counter")
-	writeMetricSample(&out, metricName(namespace, "db_max_lifetime_closed_total"), nil, strconv.FormatInt(stats.MaxLifetimeClosed, 10))
-
-	var mem runtime.MemStats
-	runtime.ReadMemStats(&mem)
-	writeHelpAndType(&out, metricName(namespace, "runtime_goroutines"), "Current number of goroutines.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "runtime_goroutines"), nil, strconv.Itoa(runtime.NumGoroutine()))
-	writeHelpAndType(&out, metricName(namespace, "runtime_gomaxprocs"), "Configured GOMAXPROCS value.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "runtime_gomaxprocs"), nil, strconv.Itoa(runtime.GOMAXPROCS(0)))
-	writeHelpAndType(&out, metricName(namespace, "runtime_memory_alloc_bytes"), "Bytes of allocated heap objects.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "runtime_memory_alloc_bytes"), nil, strconv.FormatUint(mem.Alloc, 10))
-	writeHelpAndType(&out, metricName(namespace, "runtime_memory_heap_alloc_bytes"), "Bytes of allocated heap memory.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "runtime_memory_heap_alloc_bytes"), nil, strconv.FormatUint(mem.HeapAlloc, 10))
-	writeHelpAndType(&out, metricName(namespace, "process_uptime_seconds"), "Process uptime in seconds.", "gauge")
-	writeMetricSample(&out, metricName(namespace, "process_uptime_seconds"), nil, formatOpenMetricsFloat(time.Since(m.startedAt).Seconds()))
-
-	out.WriteString("# EOF\n")
-
-	return out.String()
+	renderer := openMetricsRenderer{namespace: sanitizeMetricName(m.config.Namespace)}
+	renderer.Render(out, rm)
+	return nil
 }
 
-func (m *metricsStore) sortedHTTPMetricKeys() []httpMetricKey {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	keys := make([]httpMetricKey, 0, len(m.httpMetrics))
-	for key := range m.httpMetrics {
-		keys = append(keys, key)
+func (m *metricsStore) registerRuntimeCallbacks(meter metric.Meter) error {
+	buildInfo, err := meter.Int64ObservableGauge(
+		"build_info",
+		metric.WithDescription("Static build and runtime metadata."),
+	)
+	if err != nil {
+		return err
+	}
+	dbOpen, err := meter.Int64ObservableGauge("db_connections_open", metric.WithDescription("Open database connections."))
+	if err != nil {
+		return err
+	}
+	dbInUse, err := meter.Int64ObservableGauge("db_connections_in_use", metric.WithDescription("Database connections currently in use."))
+	if err != nil {
+		return err
+	}
+	dbIdle, err := meter.Int64ObservableGauge("db_connections_idle", metric.WithDescription("Idle database connections."))
+	if err != nil {
+		return err
+	}
+	dbWaitCount, err := meter.Int64ObservableCounter("db_wait_count_total", metric.WithDescription("Total waits for a database connection."))
+	if err != nil {
+		return err
+	}
+	dbWaitDuration, err := meter.Float64ObservableCounter("db_wait_duration_seconds_total", metric.WithDescription("Total time blocked waiting for a database connection."), metric.WithUnit("s"))
+	if err != nil {
+		return err
+	}
+	dbMaxIdleClosed, err := meter.Int64ObservableCounter("db_max_idle_closed_total", metric.WithDescription("Connections closed due to idle limit."))
+	if err != nil {
+		return err
+	}
+	dbMaxIdleTimeClosed, err := meter.Int64ObservableCounter("db_max_idle_time_closed_total", metric.WithDescription("Connections closed due to max idle time."))
+	if err != nil {
+		return err
+	}
+	dbMaxLifetimeClosed, err := meter.Int64ObservableCounter("db_max_lifetime_closed_total", metric.WithDescription("Connections closed due to max lifetime."))
+	if err != nil {
+		return err
+	}
+	goroutines, err := meter.Int64ObservableGauge("runtime_goroutines", metric.WithDescription("Current number of goroutines."))
+	if err != nil {
+		return err
+	}
+	gomaxprocs, err := meter.Int64ObservableGauge("runtime_gomaxprocs", metric.WithDescription("Configured GOMAXPROCS value."))
+	if err != nil {
+		return err
+	}
+	memAlloc, err := meter.Int64ObservableGauge("runtime_memory_alloc_bytes", metric.WithDescription("Bytes of allocated heap objects."), metric.WithUnit("By"))
+	if err != nil {
+		return err
+	}
+	heapAlloc, err := meter.Int64ObservableGauge("runtime_memory_heap_alloc_bytes", metric.WithDescription("Bytes of allocated heap memory."), metric.WithUnit("By"))
+	if err != nil {
+		return err
+	}
+	uptime, err := meter.Float64ObservableGauge("process_uptime_seconds", metric.WithDescription("Process uptime in seconds."), metric.WithUnit("s"))
+	if err != nil {
+		return err
 	}
 
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Route != keys[j].Route {
-			return keys[i].Route < keys[j].Route
-		}
-		if keys[i].Method != keys[j].Method {
-			return keys[i].Method < keys[j].Method
-		}
-		return keys[i].StatusCode < keys[j].StatusCode
-	})
+	_, err = meter.RegisterCallback(func(_ context.Context, observer metric.Observer) error {
+		observer.ObserveInt64(buildInfo, 1, metric.WithAttributes(
+			attribute.String("service", m.config.ServiceName),
+			attribute.String("version", m.config.ServiceVersion),
+			attribute.String("environment", m.config.Environment),
+			attribute.String("go_version", runtime.Version()),
+		))
 
-	return keys
+		stats := m.sqlDB.Stats()
+		observer.ObserveInt64(dbOpen, int64(stats.OpenConnections))
+		observer.ObserveInt64(dbInUse, int64(stats.InUse))
+		observer.ObserveInt64(dbIdle, int64(stats.Idle))
+		observer.ObserveInt64(dbWaitCount, stats.WaitCount)
+		observer.ObserveFloat64(dbWaitDuration, stats.WaitDuration.Seconds())
+		observer.ObserveInt64(dbMaxIdleClosed, stats.MaxIdleClosed)
+		observer.ObserveInt64(dbMaxIdleTimeClosed, stats.MaxIdleTimeClosed)
+		observer.ObserveInt64(dbMaxLifetimeClosed, stats.MaxLifetimeClosed)
+
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+		observer.ObserveInt64(goroutines, int64(runtime.NumGoroutine()))
+		observer.ObserveInt64(gomaxprocs, int64(runtime.GOMAXPROCS(0)))
+		observer.ObserveInt64(memAlloc, int64(mem.Alloc))
+		observer.ObserveInt64(heapAlloc, int64(mem.HeapAlloc))
+		observer.ObserveFloat64(uptime, time.Since(m.start).Seconds())
+
+		return nil
+	},
+		buildInfo,
+		dbOpen,
+		dbInUse,
+		dbIdle,
+		dbWaitCount,
+		dbWaitDuration,
+		dbMaxIdleClosed,
+		dbMaxIdleTimeClosed,
+		dbMaxLifetimeClosed,
+		goroutines,
+		gomaxprocs,
+		memAlloc,
+		heapAlloc,
+		uptime,
+	)
+	return err
 }
 
-func (m *metricsStore) httpMetricValue(key httpMetricKey) httpMetricValue {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+type openMetricsRenderer struct {
+	namespace string
+}
 
-	value := m.httpMetrics[key]
-	if value == nil {
-		return httpMetricValue{}
+func (r openMetricsRenderer) Render(out io.Writer, rm metricdata.ResourceMetrics) {
+	for _, scope := range rm.ScopeMetrics {
+		for _, item := range scope.Metrics {
+			r.renderMetric(out, item)
+		}
+	}
+	_, _ = io.WriteString(out, "# EOF\n")
+}
+
+func (r openMetricsRenderer) renderMetric(out io.Writer, item metricdata.Metrics) {
+	name := metricName(r.namespace, item.Name)
+	help := strings.TrimSpace(item.Description)
+	if help == "" {
+		help = item.Name
 	}
 
-	return httpMetricValue{
-		Requests:             value.Requests,
-		DurationSecondsSum:   value.DurationSecondsSum,
-		DurationBucketCounts: append([]uint64(nil), value.DurationBucketCounts...),
-		DurationExemplars:    append([]histogramExemplar(nil), value.DurationExemplars...),
+	switch data := item.Data.(type) {
+	case metricdata.Sum[int64]:
+		writeHelpAndType(out, name, help, sumMetricType(data.IsMonotonic))
+		for _, point := range data.DataPoints {
+			writeMetricSample(out, name, labelsFromAttributes(point.Attributes), strconv.FormatInt(point.Value, 10))
+		}
+	case metricdata.Sum[float64]:
+		writeHelpAndType(out, name, help, sumMetricType(data.IsMonotonic))
+		for _, point := range data.DataPoints {
+			writeMetricSample(out, name, labelsFromAttributes(point.Attributes), formatOpenMetricsFloat(point.Value))
+		}
+	case metricdata.Gauge[int64]:
+		writeHelpAndType(out, name, help, "gauge")
+		for _, point := range data.DataPoints {
+			writeMetricSample(out, name, labelsFromAttributes(point.Attributes), strconv.FormatInt(point.Value, 10))
+		}
+	case metricdata.Gauge[float64]:
+		writeHelpAndType(out, name, help, "gauge")
+		for _, point := range data.DataPoints {
+			writeMetricSample(out, name, labelsFromAttributes(point.Attributes), formatOpenMetricsFloat(point.Value))
+		}
+	case metricdata.Histogram[int64]:
+		writeHelpAndType(out, name, help, "histogram")
+		for _, point := range data.DataPoints {
+			r.renderHistogramDataPoint(out, name, labelsFromAttributes(point.Attributes), point.Bounds, point.BucketCounts, float64(point.Sum), point.Count)
+		}
+	case metricdata.Histogram[float64]:
+		writeHelpAndType(out, name, help, "histogram")
+		for _, point := range data.DataPoints {
+			r.renderHistogramDataPoint(out, name, labelsFromAttributes(point.Attributes), point.Bounds, point.BucketCounts, point.Sum, point.Count)
+		}
 	}
 }
 
-func (m *metricsStore) durationBucketIndex(seconds float64) int {
-	for idx, upperBound := range m.durationBuckets {
-		if seconds <= upperBound {
-			return idx
-		}
+func sumMetricType(monotonic bool) string {
+	if monotonic {
+		return "counter"
 	}
-	return len(m.durationBuckets)
+	return "gauge"
+}
+
+func (r openMetricsRenderer) renderHistogramDataPoint(out io.Writer, name string, labels []metricLabel, bounds []float64, bucketCounts []uint64, sum float64, count uint64) {
+	var cumulative uint64
+	for idx, upperBound := range bounds {
+		if idx < len(bucketCounts) {
+			cumulative += bucketCounts[idx]
+		}
+		writeMetricSample(out, name+"_bucket", appendMetricLabel(labels, "le", formatOpenMetricsFloat(upperBound)), strconv.FormatUint(cumulative, 10))
+	}
+	if len(bucketCounts) > len(bounds) {
+		cumulative += bucketCounts[len(bounds)]
+	}
+	writeMetricSample(out, name+"_bucket", appendMetricLabel(labels, "le", "+Inf"), strconv.FormatUint(cumulative, 10))
+	writeMetricSample(out, name+"_sum", labels, formatOpenMetricsFloat(sum))
+	writeMetricSample(out, name+"_count", labels, strconv.FormatUint(count, 10))
 }
 
 type metricLabel struct {
@@ -258,56 +375,51 @@ type metricLabel struct {
 	Value string
 }
 
-type metricExemplar struct {
-	Labels []metricLabel
-	Value  string
+func labelsFromAttributes(attrs attribute.Set) []metricLabel {
+	items := attrs.ToSlice()
+	out := make([]metricLabel, 0, len(items))
+	for _, item := range items {
+		out = append(out, metricLabel{
+			Key:   string(item.Key),
+			Value: item.Value.Emit(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Key < out[j].Key
+	})
+	return out
 }
 
-func writeHelpAndType(out *strings.Builder, name, help, metricType string) {
-	fmt.Fprintf(out, "# HELP %s %s\n", name, help)
-	fmt.Fprintf(out, "# TYPE %s %s\n", name, metricType)
+func writeHelpAndType(out io.Writer, name, help, metricType string) {
+	_, _ = fmt.Fprintf(out, "# HELP %s %s\n", name, help)
+	_, _ = fmt.Fprintf(out, "# TYPE %s %s\n", name, metricType)
 }
 
-func writeMetricSample(out *strings.Builder, name string, labels []metricLabel, value string) {
-	writeMetricSampleWithExemplar(out, name, labels, value, nil)
-}
-
-func writeMetricSampleWithExemplar(out *strings.Builder, name string, labels []metricLabel, value string, exemplar *metricExemplar) {
-	out.WriteString(name)
+func writeMetricSample(out io.Writer, name string, labels []metricLabel, value string) {
+	_, _ = io.WriteString(out, name)
 	if len(labels) > 0 {
-		out.WriteByte('{')
-		for i, label := range labels {
-			if i > 0 {
-				out.WriteByte(',')
-			}
-			fmt.Fprintf(out, `%s="%s"`, sanitizeMetricName(label.Key), escapeLabelValue(label.Value))
-		}
-		out.WriteByte('}')
+		writeMetricLabels(out, labels)
 	}
-	out.WriteByte(' ')
-	out.WriteString(value)
-	if exemplar != nil && len(exemplar.Labels) > 0 && exemplar.Value != "" {
-		out.WriteString(" # ")
-		writeMetricLabels(out, exemplar.Labels)
-		out.WriteByte(' ')
-		out.WriteString(exemplar.Value)
-	}
-	out.WriteByte('\n')
+	_, _ = fmt.Fprintf(out, " %s\n", value)
 }
 
-func writeMetricLabels(out *strings.Builder, labels []metricLabel) {
-	out.WriteByte('{')
+func writeMetricLabels(out io.Writer, labels []metricLabel) {
+	_, _ = io.WriteString(out, "{")
 	for i, label := range labels {
 		if i > 0 {
-			out.WriteByte(',')
+			_, _ = io.WriteString(out, ",")
 		}
-		fmt.Fprintf(out, `%s="%s"`, sanitizeMetricName(label.Key), escapeLabelValue(label.Value))
+		_, _ = fmt.Fprintf(out, `%s="%s"`, sanitizeMetricName(label.Key), escapeLabelValue(label.Value))
 	}
-	out.WriteByte('}')
+	_, _ = io.WriteString(out, "}")
 }
 
 func metricName(namespace, suffix string) string {
-	return sanitizeMetricName(namespace) + "_" + sanitizeMetricName(suffix)
+	suffix = sanitizeMetricName(suffix)
+	if namespace == "" {
+		return suffix
+	}
+	return sanitizeMetricName(namespace) + "_" + suffix
 }
 
 func sanitizeMetricName(value string) string {
@@ -359,21 +471,5 @@ func formatOpenMetricsFloat(value float64) string {
 			return formatted + ".0"
 		}
 		return formatted
-	}
-}
-
-func (v httpMetricValue) histogramBucketExemplar(idx int) *metricExemplar {
-	if idx < 0 || idx >= len(v.DurationExemplars) {
-		return nil
-	}
-
-	exemplar := v.DurationExemplars[idx]
-	if exemplar.TraceID == "" {
-		return nil
-	}
-
-	return &metricExemplar{
-		Labels: []metricLabel{{Key: "trace_id", Value: exemplar.TraceID}},
-		Value:  formatOpenMetricsFloat(exemplar.Value),
 	}
 }
