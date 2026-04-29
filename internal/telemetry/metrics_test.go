@@ -30,7 +30,6 @@ func TestMetricsHandlerRendersOpenMetricsFromOTelReader(t *testing.T) {
 		ServiceName:    "procyon",
 		ServiceVersion: "test",
 		Environment:    "test",
-		Namespace:      namespace,
 	}, reader, provider.Meter(httpInstrumentationName), new(sql.DB))
 	if err != nil {
 		t.Fatalf("new metrics store: %v", err)
