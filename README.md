@@ -217,8 +217,9 @@ What it does:
 - OTLP trace export supports `log`, `none` and `otlp_grpc`; OTLP metrics export supports `none` and `otlp_grpc`
 - RBAC uses Kratos identity ID plus Casbin roles/policies stored in the app DB; role fields in Kratos traits or metadata are not trusted
 
-See [METRICS.md](METRICS.md) for metrics configuration and business metric examples.
-See [ROLES.md](ROLES.md) for Kratos/Casbin RBAC configuration and role examples.
+See [docs/METRICS.md](docs/METRICS.md) for metrics configuration and business metric examples.
+See [docs/ROLES.md](docs/ROLES.md) for Kratos/Casbin RBAC configuration and role examples.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for project architecture rules.
 
 ## What to replace in a new project
 

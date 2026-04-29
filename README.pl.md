@@ -217,8 +217,9 @@ Co robi skrypt:
 - eksport trace wspiera `log`, `none` i `otlp_grpc`; eksport metryk OTLP wspiera `none` i `otlp_grpc`
 - RBAC używa Kratos identity ID oraz ról/polityk Casbina trzymanych w app DB; pola roli w Kratos traits albo metadata nie są traktowane jako zaufane
 
-Zobacz [METRICS.md](METRICS.md), żeby sprawdzić konfigurację metryk i przykłady metryk biznesowych.
-Zobacz [ROLES.md](ROLES.md), żeby sprawdzić konfigurację RBAC Kratos/Casbin i przykłady ról.
+Zobacz [docs/METRICS.md](docs/METRICS.md), żeby sprawdzić konfigurację metryk i przykłady metryk biznesowych.
+Zobacz [docs/ROLES.md](docs/ROLES.md), żeby sprawdzić konfigurację RBAC Kratos/Casbin i przykłady ról.
+Zobacz [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), żeby sprawdzić reguły architektury projektu.
 
 ## Co podmienić w nowym projekcie
 

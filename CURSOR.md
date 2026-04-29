@@ -20,6 +20,11 @@ This project includes two **Cursor project rules** that apply automatically when
 
 **Other tools:** Merge content from both skill files into the project's root instruction file.
 
+Project documentation lives in `docs/`:
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/METRICS.md`](docs/METRICS.md)
+- [`docs/ROLES.md`](docs/ROLES.md)
+
 ## For contributors
 
 When you change the guidelines, keep the rule files and their corresponding skill files in sync:
