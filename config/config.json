@@ -24,20 +24,10 @@
     "secret_key": "CHANGE_ME_ADMIN_KEY"
   },
   "observability": {
-    "service_name": "procyon",
-    "environment": "dev",
-    "namespace": "procyon",
-    "metrics_path": "/metrics",
-    "health_path": "/healthz",
-    "ready_path": "/readyz",
-    "info_path": "/info",
-    "trace_sample_ratio": 1,
     "trace_exporter": "log",
     "metrics_exporter": "none",
     "trace_otlp_endpoint": "tempo:4317",
-    "trace_otlp_insecure": true,
-    "trace_otlp_headers": {},
-    "trace_otlp_timeout_seconds": 10
+    "trace_sample_ratio": 1
   },
   "logging": {
     "level": "info",

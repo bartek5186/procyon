@@ -181,7 +181,7 @@ func (m *metricsStore) Render(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	renderer := openMetricsRenderer{namespace: sanitizeMetricName(m.config.Namespace)}
+	renderer := openMetricsRenderer{namespace: sanitizeMetricName(m.config.ServiceName)}
 	renderer.Render(out, rm)
 	return nil
 }

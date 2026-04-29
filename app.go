@@ -25,7 +25,6 @@ import (
 )
 
 type application struct {
-	obsConfig  internal.ObservabilityConfig
 	obs        *telemetry.Manager
 	kratosAuth *mid.KratosAuth
 	rbac       *mid.CasbinRBAC
@@ -82,7 +81,6 @@ func run() error {
 	}
 
 	app := &application{
-		obsConfig:  obsConfig,
 		obs:        obs,
 		kratosAuth: kratosAuth,
 		rbac:       mid.NewCasbinRBAC(casbinAuthz),
@@ -106,7 +104,6 @@ func run() error {
 		zap.String("admin", config.AdminAddress()),
 		zap.String("upload", config.UploadAddress()),
 		zap.Bool("migrate", migrate),
-		zap.String("metrics_path", obsConfig.MetricsPath),
 	)
 
 	type serverErr struct {

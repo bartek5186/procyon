@@ -138,13 +138,10 @@ func newOTLPGRPCTraceExporter(ctx context.Context, cfg internal.ObservabilityCon
 
 	options := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpoint(endpoint),
-		otlptracegrpc.WithTimeout(time.Duration(cfg.TraceOTLPTimeoutSeconds) * time.Second),
+		otlptracegrpc.WithTimeout(10 * time.Second),
 	}
 	if cfg.TraceOTLPInsecure {
 		options = append(options, otlptracegrpc.WithInsecure())
-	}
-	if len(cfg.TraceOTLPHeaders) > 0 {
-		options = append(options, otlptracegrpc.WithHeaders(cfg.TraceOTLPHeaders))
 	}
 
 	return otlptracegrpc.New(ctx, options...)
@@ -162,13 +159,10 @@ func newMetricExporter(ctx context.Context, cfg internal.ObservabilityConfig) (s
 
 		options := []otlpmetricgrpc.Option{
 			otlpmetricgrpc.WithEndpoint(endpoint),
-			otlpmetricgrpc.WithTimeout(time.Duration(cfg.TraceOTLPTimeoutSeconds) * time.Second),
+			otlpmetricgrpc.WithTimeout(10 * time.Second),
 		}
 		if cfg.TraceOTLPInsecure {
 			options = append(options, otlpmetricgrpc.WithInsecure())
-		}
-		if len(cfg.TraceOTLPHeaders) > 0 {
-			options = append(options, otlpmetricgrpc.WithHeaders(cfg.TraceOTLPHeaders))
 		}
 
 		return otlpmetricgrpc.New(ctx, options...)
@@ -395,17 +389,11 @@ func (m *Manager) InfoHandler(c echo.Context) error {
 		"version":     m.config.ServiceVersion,
 		"environment": m.config.Environment,
 		"observability": map[string]any{
-			"namespace":                  m.config.Namespace,
-			"metrics_path":               m.config.MetricsPath,
-			"health_path":                m.config.HealthPath,
-			"ready_path":                 m.config.ReadyPath,
-			"info_path":                  m.config.InfoPath,
-			"trace_exporter":             m.config.TraceExporter,
-			"metrics_exporter":           m.config.MetricsExporter,
-			"trace_sample_ratio":         m.config.TraceSampleRatio,
-			"trace_otlp_endpoint":        m.config.TraceOTLPEndpoint,
-			"trace_otlp_insecure":        m.config.TraceOTLPInsecure,
-			"trace_otlp_timeout_seconds": m.config.TraceOTLPTimeoutSeconds,
+			"trace_exporter":      m.config.TraceExporter,
+			"metrics_exporter":    m.config.MetricsExporter,
+			"trace_sample_ratio":  m.config.TraceSampleRatio,
+			"trace_otlp_endpoint": m.config.TraceOTLPEndpoint,
+			"trace_otlp_insecure": m.config.TraceOTLPInsecure,
 		},
 		"time": time.Now().UTC().Format(time.RFC3339),
 	})

@@ -17,21 +17,16 @@ import (
 var configLogger = NewLogger().GetLogger()
 
 type ObservabilityConfig struct {
-	ServiceName             string            `json:"service_name"`
-	ServiceVersion          string            `json:"service_version"`
-	Environment             string            `json:"environment"`
-	Namespace               string            `json:"namespace"`
-	MetricsPath             string            `json:"metrics_path"`
-	HealthPath              string            `json:"health_path"`
-	ReadyPath               string            `json:"ready_path"`
-	InfoPath                string            `json:"info_path"`
-	TraceSampleRatio        float64           `json:"trace_sample_ratio"`
-	TraceExporter           string            `json:"trace_exporter"`
-	MetricsExporter         string            `json:"metrics_exporter"`
-	TraceOTLPEndpoint       string            `json:"trace_otlp_endpoint"`
-	TraceOTLPInsecure       bool              `json:"trace_otlp_insecure"`
-	TraceOTLPHeaders        map[string]string `json:"trace_otlp_headers"`
-	TraceOTLPTimeoutSeconds int               `json:"trace_otlp_timeout_seconds"`
+	TraceExporter     string  `json:"trace_exporter"`
+	MetricsExporter   string  `json:"metrics_exporter"`
+	TraceOTLPEndpoint string  `json:"trace_otlp_endpoint"`
+	TraceSampleRatio  float64 `json:"trace_sample_ratio"`
+
+	// derived by WithDefaults — not in JSON
+	ServiceName       string
+	ServiceVersion    string
+	Environment       string
+	TraceOTLPInsecure bool
 }
 
 type LoggingConfig struct {
@@ -219,21 +214,6 @@ func (cfg ObservabilityConfig) WithDefaults(appVersion, appName string, prod boo
 			cfg.Environment = "dev"
 		}
 	}
-	if strings.TrimSpace(cfg.Namespace) == "" {
-		cfg.Namespace = "procyon"
-	}
-	if strings.TrimSpace(cfg.MetricsPath) == "" {
-		cfg.MetricsPath = "/metrics"
-	}
-	if strings.TrimSpace(cfg.HealthPath) == "" {
-		cfg.HealthPath = "/healthz"
-	}
-	if strings.TrimSpace(cfg.ReadyPath) == "" {
-		cfg.ReadyPath = "/readyz"
-	}
-	if strings.TrimSpace(cfg.InfoPath) == "" {
-		cfg.InfoPath = "/info"
-	}
 	if cfg.TraceSampleRatio <= 0 || cfg.TraceSampleRatio > 1 {
 		cfg.TraceSampleRatio = 1
 	}
@@ -243,9 +223,7 @@ func (cfg ObservabilityConfig) WithDefaults(appVersion, appName string, prod boo
 	if strings.TrimSpace(cfg.MetricsExporter) == "" {
 		cfg.MetricsExporter = "none"
 	}
-	if cfg.TraceOTLPTimeoutSeconds <= 0 {
-		cfg.TraceOTLPTimeoutSeconds = 10
-	}
+	cfg.TraceOTLPInsecure = !prod
 
 	return cfg
 }

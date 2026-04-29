@@ -10,10 +10,9 @@ import (
 func registerPublicRoutes(e *echo.Echo, app *application) {
 	e.Static("/", "static")
 
-	e.GET(app.obsConfig.HealthPath, app.obs.HealthHandler)
-	e.GET(app.obsConfig.ReadyPath, app.obs.ReadyHandler)
-	e.GET(app.obsConfig.InfoPath, app.obs.InfoHandler)
-	e.GET(app.obsConfig.MetricsPath, echo.WrapHandler(app.obs.MetricsHandler()))
+	e.GET("/healthz", app.obs.HealthHandler)
+	e.GET("/readyz", app.obs.ReadyHandler)
+	e.GET("/info", app.obs.InfoHandler)
 
 	e.GET("/health", app.hello.Health)
 	e.GET("/hello", app.hello.Hello)
@@ -25,6 +24,8 @@ func registerPublicRoutes(e *echo.Echo, app *application) {
 }
 
 func registerAdminRoutes(e *echo.Echo, app *application) {
+	e.GET("/metrics", echo.WrapHandler(app.obs.MetricsHandler()))
+
 	admin := e.Group("", app.adminAuth.RequireAdminKey)
 	admin.GET("/ping", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{
