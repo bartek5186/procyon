@@ -15,15 +15,16 @@ const ContextKeySession = "kratosSession"
 
 var kratosHTTP = &http.Client{
 	Transport: &http.Transport{
-		MaxIdleConns:          200,
-		MaxIdleConnsPerHost:   100,
-		IdleConnTimeout:       90 * time.Second,
-		ForceAttemptHTTP2:     true,
-		TLSHandshakeTimeout:   2 * time.Second,
-		ResponseHeaderTimeout: 2 * time.Second,
+		MaxIdleConns:        200,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+		ForceAttemptHTTP2:   true,
+
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
-	Timeout: 2 * time.Second,
+	Timeout: 10 * time.Second,
 }
 
 type KratosAuth struct {

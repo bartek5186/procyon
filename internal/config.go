@@ -41,19 +41,16 @@ type LoggingConfig struct {
 }
 
 type AuthConfig struct {
-	Enabled  *bool  `json:"enabled"`
 	Provider string `json:"provider"`
 	Domain   string `json:"domain"`
 }
 
 type RBACConfig struct {
-	Enabled          *bool    `json:"enabled"`
 	DefaultRole      string   `json:"default_role"`
 	AdminIdentityIDs []string `json:"admin_identity_ids"`
 }
 
 type AdminConfig struct {
-	Enabled   *bool  `json:"enabled"`
 	SecretKey string `json:"secret_key"`
 }
 
@@ -130,17 +127,14 @@ func (c Config) Validate() error {
 	if c.Database.Port <= 0 {
 		return fmt.Errorf("database.port must be positive")
 	}
-	if c.AuthEnabled() && c.AuthProvider() == "kratos" && strings.TrimSpace(c.AuthBaseURL()) == "" {
+	if c.AuthProvider() == "kratos" && strings.TrimSpace(c.AuthBaseURL()) == "" {
 		return fmt.Errorf("auth.domain or auth_domain is required when auth provider is kratos")
 	}
-	if c.RBACEnabled() && !c.AuthEnabled() {
-		return fmt.Errorf("rbac requires auth.enabled=true")
-	}
-	if c.AdminEnabled() && strings.TrimSpace(c.Admin.SecretKey) == "" {
-		return fmt.Errorf("admin.secret_key is required when admin is enabled")
+	if strings.TrimSpace(c.Admin.SecretKey) == "" {
+		return fmt.Errorf("admin.secret_key is required")
 	}
 	if c.Prod {
-		if c.AdminEnabled() && strings.TrimSpace(c.Admin.SecretKey) == "CHANGE_ME_ADMIN_KEY" {
+		if strings.TrimSpace(c.Admin.SecretKey) == "CHANGE_ME_ADMIN_KEY" {
 			return fmt.Errorf("admin.secret_key must be changed in prod")
 		}
 		if strings.TrimSpace(c.Database.Password) == "" {
@@ -149,10 +143,6 @@ func (c Config) Validate() error {
 	}
 
 	return nil
-}
-
-func (c Config) AuthEnabled() bool {
-	return optionalBool(c.Auth.Enabled, true)
 }
 
 func (c Config) AuthProvider() string {
@@ -168,14 +158,6 @@ func (c Config) AuthBaseURL() string {
 		return domain
 	}
 	return strings.TrimSpace(c.AuthDomain)
-}
-
-func (c Config) RBACEnabled() bool {
-	return optionalBool(c.RBAC.Enabled, c.AuthEnabled())
-}
-
-func (c Config) AdminEnabled() bool {
-	return optionalBool(c.Admin.Enabled, strings.TrimSpace(c.Admin.SecretKey) != "")
 }
 
 func (c Config) AutoMigrateEnabled() bool {

@@ -57,13 +57,9 @@ func main() {
 	)
 
 	db := internal.NewDatabaseConnection(config)
-	var casbinAuthz *authz.CasbinAuthorizer
-	if config.RBACEnabled() {
-		var err error
-		casbinAuthz, err = authz.NewCasbinAuthorizer(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs)
-		if err != nil {
-			logger.GetLogger().Fatal("failed to initialize casbin", zap.Error(err))
-		}
+	casbinAuthz, err := authz.NewCasbinAuthorizer(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs)
+	if err != nil {
+		logger.GetLogger().Fatal("failed to initialize casbin", zap.Error(err))
 	}
 
 	obs, err := telemetry.New(context.Background(), obsConfig, logger.GetLogger(), db)
@@ -82,13 +78,11 @@ func main() {
 	helloController := controllers.NewHelloController(appService, logger.GetLogger())
 
 	var kratosAuth *mid.KratosAuth
-	if config.AuthEnabled() {
-		switch config.AuthProvider() {
-		case "kratos":
-			kratosAuth = mid.NewKratosAuth(config.AuthBaseURL())
-		default:
-			logger.GetLogger().Fatal("unsupported auth provider", zap.String("provider", config.AuthProvider()))
-		}
+	switch config.AuthProvider() {
+	case "kratos":
+		kratosAuth = mid.NewKratosAuth(config.AuthBaseURL())
+	default:
+		logger.GetLogger().Fatal("unsupported auth provider", zap.String("provider", config.AuthProvider()))
 	}
 	rbac := mid.NewCasbinRBAC(casbinAuthz)
 	adminAuth := mid.NewAdminKeyAuth(config.Admin.SecretKey)
@@ -98,9 +92,9 @@ func main() {
 	e.HTTPErrorHandler = apierr.Handler(logger.GetLogger())
 	e.Validator = internal.NewInputValidator()
 	e.Server.ReadHeaderTimeout = 5 * time.Second
-	e.Server.ReadTimeout = 15 * time.Second
-	e.Server.WriteTimeout = 30 * time.Second
-	e.Server.IdleTimeout = 60 * time.Second
+	e.Server.ReadTimeout = 10 * time.Minute // albo 0, jeśli kontrolujesz to inaczej
+	e.Server.WriteTimeout = 60 * time.Second
+	e.Server.IdleTimeout = 120 * time.Second
 
 	e.Use(middleware.RequestID())
 	e.Use(mid.LanguageMiddleware("pl", config.Languages))
@@ -122,36 +116,25 @@ func main() {
 	e.GET("/health", helloController.Health)
 	e.GET("/hello", helloController.Hello)
 
-	if config.AuthEnabled() {
-		secured := e.Group("/v1", kratosAuth.RequireSession)
-		if config.RBACEnabled() {
-			secured.GET("/hello", helloController.HelloAuthenticated, rbac.Require("hello", "read"))
-			securedAdmin := secured.Group("/admin", rbac.Require("hello", "manage"))
-			securedAdmin.GET("/hello", helloController.HelloAdmin)
-		} else {
-			secured.GET("/hello", helloController.HelloAuthenticated)
-		}
-	}
+	secured := e.Group("/v1", kratosAuth.RequireSession)
+	secured.GET("/hello", helloController.HelloAuthenticated, rbac.Require("hello", "read"))
+	securedAdmin := secured.Group("/admin", rbac.Require("hello", "manage"))
+	securedAdmin.GET("/hello", helloController.HelloAdmin)
 
-	if config.AdminEnabled() {
-		admin := e.Group("/admin", adminAuth.RequireAdminKey)
-		admin.GET("/ping", func(c echo.Context) error {
-			return c.JSON(http.StatusOK, map[string]any{
-				"status": "ok",
-				"auth":   "admin_key",
-				"time":   time.Now().UTC().Format(time.RFC3339),
-			})
+	admin := e.Group("/admin", adminAuth.RequireAdminKey)
+	admin.GET("/ping", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]any{
+			"status": "ok",
+			"auth":   "admin_key",
+			"time":   time.Now().UTC().Format(time.RFC3339),
 		})
-	}
+	})
 
 	logger.GetLogger().Info(
 		"server starting",
 		zap.String("app", config.AppName),
 		zap.String("address", config.ServerAddress()),
 		zap.Bool("migrate", migrate),
-		zap.Bool("auth_enabled", config.AuthEnabled()),
-		zap.Bool("rbac_enabled", config.RBACEnabled()),
-		zap.Bool("admin_enabled", config.AdminEnabled()),
 		zap.String("metrics_path", obsConfig.MetricsPath),
 	)
 
