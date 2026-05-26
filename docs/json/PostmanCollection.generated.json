@@ -1,0 +1,393 @@
+{
+  "info": {
+    "name": "Procyon Generated API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseURL",
+      "value": "https://api-dev.procyon.pl",
+      "type": "string"
+    },
+    {
+      "key": "adminURL",
+      "value": "https://admin-dev.procyon.pl",
+      "type": "string"
+    },
+    {
+      "key": "uploadURL",
+      "value": "https://upload-dev.procyon.pl",
+      "type": "string"
+    },
+    {
+      "key": "adminKey",
+      "value": "CHANGE_ME_ADMIN_KEY",
+      "type": "string"
+    },
+    {
+      "key": "authKey",
+      "value": "CHANGE_ME_AUTH_KEY",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Admin",
+      "auth": {
+        "type": "apikey",
+        "apikey": [
+          {
+            "key": "key",
+            "value": "X-Admin-Key",
+            "type": "string"
+          },
+          {
+            "key": "value",
+            "value": "{{adminKey}}",
+            "type": "string"
+          },
+          {
+            "key": "in",
+            "value": "header",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Metrics",
+          "item": [
+            {
+              "name": "WrapHandler",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{adminURL}}/metrics",
+                  "host": [
+                    "{{adminURL}}"
+                  ],
+                  "path": [
+                    "metrics"
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "200 OK - example",
+                  "status": "OK",
+                  "code": 200,
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json",
+                      "type": "text"
+                    }
+                  ],
+                  "body": "{\n  \"status\": \"ok\"\n}"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Ping",
+          "item": [
+            {
+              "name": "*ast.FuncLit",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{adminURL}}/ping",
+                  "host": [
+                    "{{adminURL}}"
+                  ],
+                  "path": [
+                    "ping"
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "200 OK - example",
+                  "status": "OK",
+                  "code": 200,
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json",
+                      "type": "text"
+                    }
+                  ],
+                  "body": "{\n  \"status\": \"ok\"\n}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Authenticated",
+      "item": [
+        {
+          "name": "HelloAdmin",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{authKey}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{authKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseURL}}/v1/admin/hello",
+              "host": [
+                "{{baseURL}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "hello"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"data\": {\n    \"app\": \"example\",\n    \"authenticated\": true,\n    \"identity_id\": \"example\",\n    \"locale\": \"example\",\n    \"message\": \"example\",\n    \"role\": \"example\",\n    \"source\": \"example\"\n  },\n  \"scope\": \"hello:manage\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "HelloAuthenticated",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{authKey}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{authKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseURL}}/v1/hello",
+              "host": [
+                "{{baseURL}}"
+              ],
+              "path": [
+                "v1",
+                "hello"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"app\": \"example\",\n  \"authenticated\": true,\n  \"identity_id\": \"example\",\n  \"locale\": \"example\",\n  \"message\": \"example\",\n  \"role\": \"example\",\n  \"source\": \"example\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseURL}}/health",
+              "host": [
+                "{{baseURL}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"app\": \"example\",\n  \"status\": \"draft\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "HealthHandler",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseURL}}/healthz",
+              "host": [
+                "{{baseURL}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Hello",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseURL}}/hello",
+              "host": [
+                "{{baseURL}}"
+              ],
+              "path": [
+                "hello"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"app\": \"example\",\n  \"authenticated\": true,\n  \"identity_id\": \"example\",\n  \"locale\": \"example\",\n  \"message\": \"example\",\n  \"role\": \"example\",\n  \"source\": \"example\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "InfoHandler",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseURL}}/info",
+              "host": [
+                "{{baseURL}}"
+              ],
+              "path": [
+                "info"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "ReadyHandler",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseURL}}/readyz",
+              "host": [
+                "{{baseURL}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

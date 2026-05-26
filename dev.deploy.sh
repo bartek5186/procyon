@@ -36,3 +36,4 @@ echo "==> Status"
 ssh "$REMOTE" "cd '$REMOTE_DIR' && docker compose ps"
 
 echo "Deploy produkcyjny zakończony."
+

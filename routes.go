@@ -18,8 +18,8 @@ func registerPublicRoutes(e *echo.Echo, app *application) {
 	e.GET("/hello", app.hello.Hello)
 
 	secured := e.Group("/v1", app.kratosAuth.RequireSession)
-	secured.GET("/hello", app.hello.HelloAuthenticated, app.rbac.Require("hello", "read"))
-	securedAdmin := secured.Group("/admin", app.rbac.Require("hello", "manage"))
+	secured.GET("/hello", app.hello.HelloAuthenticated, app.rbac.Require("*", "hello", "read"))
+	securedAdmin := secured.Group("/admin", app.rbac.Require("*", "hello", "manage"))
 	securedAdmin.GET("/hello", app.hello.HelloAdmin)
 }
 
