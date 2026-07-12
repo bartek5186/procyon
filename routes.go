@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	coreplugins "github.com/bartek5186/procyon-core/plugins"
 	"github.com/labstack/echo/v4"
 )
 
@@ -26,6 +27,21 @@ func registerPublicRoutes(e *echo.Echo, app *application) {
 	}
 	_ = api
 	// procyon:api-routes
+
+	pluginPublic := e.Group("/v1")
+	var pluginAuthenticated *echo.Group
+	var pluginAdmin *echo.Group
+	if app.kratosAuth != nil {
+		pluginAuthenticated = e.Group("/v1", app.kratosAuth.RequireSession)
+		if app.rbac != nil {
+			pluginAdmin = pluginAuthenticated.Group("/admin", app.requirePermission("*", "plugin_admin", "manage"))
+		}
+	}
+	for _, plugin := range app.plugins {
+		plugin.RegisterRoutes(coreplugins.Routes{
+			Public: pluginPublic, Authenticated: pluginAuthenticated, Admin: pluginAdmin, Require: app.requirePermission,
+		})
+	}
 }
 
 func registerAdminRoutes(e *echo.Echo, app *application) {

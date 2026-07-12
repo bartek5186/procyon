@@ -15,6 +15,7 @@ import (
 	coreconfig "github.com/bartek5186/procyon-core/config"
 	"github.com/bartek5186/procyon-core/logging"
 	mid "github.com/bartek5186/procyon-core/middleware"
+	coreplugins "github.com/bartek5186/procyon-core/plugins"
 	"github.com/bartek5186/procyon-core/telemetry"
 	"github.com/bartek5186/procyon-core/validation"
 	"github.com/bartek5186/procyon/controllers"
@@ -32,6 +33,7 @@ type application struct {
 	kratosAuth *mid.KratosAuth
 	rbac       *mid.CasbinRBAC
 	adminAuth  *mid.AdminKeyAuth
+	plugins    []coreplugins.Plugin
 	// procyon:module-controller-fields
 	hello *controllers.HelloController
 }
@@ -67,9 +69,16 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize telemetry: %w", err)
 	}
+	installedPlugins, err := loadInstalledPlugins(context.Background(), db, logger.GetLogger(), config)
+	if err != nil {
+		return err
+	}
 
 	if migrate {
 		if err := internal.MigrateRun(db, config); err != nil {
+			return err
+		}
+		if err := migrateInstalledPlugins(context.Background(), installedPlugins); err != nil {
 			return err
 		}
 	}
@@ -90,7 +99,8 @@ func run() error {
 
 	var rbac *mid.CasbinRBAC
 	if config.RBACEnabled() {
-		casbinAuthz, err := authz.NewCasbinAuthorizerWithPolicies(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs, applicationPolicies)
+		policies := append(append([]authz.Policy(nil), applicationPolicies...), installedPluginPolicies(installedPlugins)...)
+		casbinAuthz, err := authz.NewCasbinAuthorizerWithPolicies(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs, policies)
 		if err != nil {
 			return fmt.Errorf("initialize casbin: %w", err)
 		}
@@ -107,6 +117,7 @@ func run() error {
 		kratosAuth: kratosAuth,
 		rbac:       rbac,
 		adminAuth:  adminAuth,
+		plugins:    installedPlugins,
 		// procyon:module-controller-init
 		hello: controllers.NewHelloController(appService, logger.GetLogger()),
 	}
@@ -164,6 +175,7 @@ func run() error {
 			logger.GetLogger().Error("shutdown failed", zap.String("server", name), zap.Error(err))
 		}
 	}
+	shutdownInstalledPlugins(shutdownCtx, installedPlugins, logger.GetLogger())
 	if err := obs.Shutdown(shutdownCtx); err != nil {
 		logger.GetLogger().Error("telemetry shutdown failed", zap.Error(err))
 	}
