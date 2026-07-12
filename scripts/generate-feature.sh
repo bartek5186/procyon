@@ -240,7 +240,7 @@ package controllers
 import (
 	"net/http"
 
-	"${MODULE}/internal/apierr"
+	"github.com/bartek5186/procyon-core/apierr"
 	"${MODULE}/models"
 	"${MODULE}/services"
 	"github.com/labstack/echo/v4"

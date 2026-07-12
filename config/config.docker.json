@@ -8,10 +8,12 @@
   ],
   "auth_domain": "http://host.docker.internal:4433",
   "auth": {
+    "enabled": true,
     "provider": "kratos",
     "domain": "http://host.docker.internal:4433"
   },
   "rbac": {
+    "enabled": true,
     "default_role": "user",
     "admin_identity_ids": []
   },
@@ -21,6 +23,7 @@
     "http://127.0.0.1:8081"
   ],
   "admin": {
+    "enabled": true,
     "secret_key": "CHANGE_ME_ADMIN_KEY"
   },
   "observability": {

@@ -14,6 +14,7 @@ config/
 controllers/
 internal/
 models/
+policies.go
 services/
 static/
 store/
@@ -22,16 +23,9 @@ main.go
 
 ## Co jest gotowe
 
-- `internal/config.go` z ładowaniem konfiguracji i połączeniem MySQL/PostgreSQL
-- `internal/logger.go` z `zap`, JSON na stdout i opcjonalnym zapisem do pliku
-- `internal/telemetry/` z OpenTelemetry, OpenMetrics, health/readiness/info i logami requestów HTTP
-- `internal/authz/` z Casbinem, domyślnym modelem polityk i helperami ról
-- `internal/apierr/` ze wspólnym formatem błędów API i Echo error handlerem
-- `internal/validator.go`
-- `internal/middleware/language.go`
-- `internal/middleware/kratos_auth.go` z auth opartym o ORY Kratos
-- `internal/middleware/casbin_authz.go` z middleware RBAC opartym o Casbin
-- `internal/middleware/admin_key_auth.go` dla prostych endpointów admin/internal
+- wersjonowana zależność `github.com/bartek5186/procyon-core` z konfiguracją,
+  bazą, loggerem, telemetry, błędami API, walidacją, auth i middleware
+- polityki Casbina należące do aplikacji w `policies.go`
 - `internal/i18n/` z prostym loaderem tłumaczeń
 - `models.HelloMessage` jako przykładowy model
 - `HelloController`, `HelloService`, `HelloStore`
@@ -60,6 +54,18 @@ go run . -config=config/config.postgres.example.json -migrate=true
 Punkt startowy dla nowego serwisu:
 - `config/config.example.json` dla MySQL
 - `config/config.postgres.example.json` dla PostgreSQL
+
+## Aktualizacja Frameworka
+
+Wspólna infrastruktura pochodzi z wersjonowanego modułu Go `procyon-core`.
+W katalogu aplikacji uruchom:
+
+```bash
+procyon-cli update
+```
+
+Polecenie aktualizuje zależność oraz uruchamia `go mod tidy` i `go test ./...`.
+Routing, kod domenowy, polityki i migracje aplikacji nie są nadpisywane.
 
 ## Inicjalizacja Projektu
 
@@ -161,7 +167,7 @@ Błędy używają wspólnego formatu:
 }
 ```
 
-W controllerach i middleware używaj `internal/apierr` zamiast lokalnych odpowiedzi typu `{"error": "..."}`.
+W controllerach i middleware używaj `github.com/bartek5186/procyon-core/apierr` zamiast lokalnych odpowiedzi typu `{"error": "..."}`.
 
 ## Docker
 

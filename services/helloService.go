@@ -5,9 +5,9 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/bartek5186/procyon-core/middleware"
+	"github.com/bartek5186/procyon-core/telemetry"
 	"github.com/bartek5186/procyon/internal/i18n"
-	"github.com/bartek5186/procyon/internal/middleware"
-	"github.com/bartek5186/procyon/internal/telemetry"
 	"github.com/bartek5186/procyon/models"
 	"github.com/bartek5186/procyon/store"
 	"go.opentelemetry.io/otel/attribute"

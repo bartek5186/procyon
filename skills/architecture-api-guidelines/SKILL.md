@@ -232,7 +232,7 @@ Walidacja jest dwupoziomowa:
 - walidacja transportowa w kontrolerze: bind, format, wymagane pola, path/query parsing,
 - walidacja biznesowa w serwisie: reguły domenowe, spójność danych, capability, ownership flow.
 
-Walidacje wspólne trzymaj w `internal/validator.go`.
+Walidacje wspólne rozwijaj w pakiecie `procyon-core/validation`, a walidacje domenowe w aplikacji.
 
 ### 7.3 Błędy i statusy
 
@@ -274,9 +274,9 @@ Nie wypychaj do kontrolera skomplikowanego składania odpowiedzi z wielu relacji
 
 Są dwa główne tryby:
 
-- user auth przez ORY Kratos w `internal/middleware/kratos_auth.go`,
-- authz przez Casbin w `internal/authz/` i `internal/middleware/casbin_authz.go`,
-- admin/internal auth przez secret key w `internal/middleware/admin_key_auth.go`.
+- user auth przez ORY Kratos w `procyon-core/middleware`,
+- authz przez Casbin w `procyon-core/authz` i `procyon-core/middleware`,
+- admin/internal auth przez secret key w `procyon-core/middleware`.
 
 Te moduły są przełączane konfiguracją:
 

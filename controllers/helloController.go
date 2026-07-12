@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/bartek5186/procyon/internal/apierr"
-	"github.com/bartek5186/procyon/internal/middleware"
+	"github.com/bartek5186/procyon-core/apierr"
+	"github.com/bartek5186/procyon-core/middleware"
 	"github.com/bartek5186/procyon/models"
 	"github.com/bartek5186/procyon/services"
 	"github.com/labstack/echo/v4"

@@ -17,25 +17,41 @@ func registerPublicRoutes(e *echo.Echo, app *application) {
 	e.GET("/health", app.hello.Health)
 	e.GET("/hello", app.hello.Hello)
 
-	secured := e.Group("/v1", app.kratosAuth.RequireSession)
-	secured.GET("/hello", app.hello.HelloAuthenticated, app.rbac.Require("*", "hello", "read"))
-	securedAdmin := secured.Group("/admin", app.rbac.Require("*", "hello", "manage"))
-	securedAdmin.GET("/hello", app.hello.HelloAdmin)
+	api := e.Group("/v1")
+	if app.kratosAuth != nil {
+		api.Use(app.kratosAuth.RequireSession)
+		api.GET("/hello", app.hello.HelloAuthenticated, app.requirePermission("*", "hello", "read"))
+		securedAdmin := api.Group("/admin", app.requirePermission("*", "hello", "manage"))
+		securedAdmin.GET("/hello", app.hello.HelloAdmin)
+	}
+	_ = api
+	// procyon:api-routes
 }
 
 func registerAdminRoutes(e *echo.Echo, app *application) {
 	e.GET("/metrics", echo.WrapHandler(app.obs.MetricsHandler()))
 
-	admin := e.Group("", app.adminAuth.RequireAdminKey)
-	admin.GET("/ping", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]any{
-			"status": "ok",
-			"auth":   "admin_key",
-			"time":   time.Now().UTC().Format(time.RFC3339),
+	if app.adminAuth != nil {
+		admin := e.Group("", app.adminAuth.RequireAdminKey)
+		admin.GET("/ping", func(c echo.Context) error {
+			return c.JSON(http.StatusOK, map[string]any{
+				"status": "ok",
+				"auth":   "admin_key",
+				"time":   time.Now().UTC().Format(time.RFC3339),
+			})
 		})
-	})
+	}
 }
 
 func registerUploadRoutes(e *echo.Echo, app *application) {
-	e.Group("/upload", app.kratosAuth.RequireSession)
+	if app.kratosAuth != nil {
+		e.Group("/upload", app.kratosAuth.RequireSession)
+	}
+}
+
+func (app *application) requirePermission(dom, obj, act string) echo.MiddlewareFunc {
+	if app.rbac == nil {
+		return func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	}
+	return app.rbac.Require(dom, obj, act)
 }

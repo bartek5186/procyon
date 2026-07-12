@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/bartek5186/procyon/internal/middleware"
+	"github.com/bartek5186/procyon-core/middleware"
 	"github.com/bartek5186/procyon/models"
 	"gorm.io/gorm"
 )

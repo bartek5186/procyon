@@ -10,13 +10,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bartek5186/procyon-core/apierr"
+	"github.com/bartek5186/procyon-core/authz"
+	coreconfig "github.com/bartek5186/procyon-core/config"
+	"github.com/bartek5186/procyon-core/logging"
+	mid "github.com/bartek5186/procyon-core/middleware"
+	"github.com/bartek5186/procyon-core/telemetry"
+	"github.com/bartek5186/procyon-core/validation"
 	"github.com/bartek5186/procyon/controllers"
 	"github.com/bartek5186/procyon/internal"
-	"github.com/bartek5186/procyon/internal/apierr"
-	"github.com/bartek5186/procyon/internal/authz"
 	"github.com/bartek5186/procyon/internal/i18n"
-	mid "github.com/bartek5186/procyon/internal/middleware"
-	"github.com/bartek5186/procyon/internal/telemetry"
 	"github.com/bartek5186/procyon/services"
 	"github.com/bartek5186/procyon/store"
 	"github.com/labstack/echo/v4"
@@ -29,11 +32,12 @@ type application struct {
 	kratosAuth *mid.KratosAuth
 	rbac       *mid.CasbinRBAC
 	adminAuth  *mid.AdminKeyAuth
-	hello      *controllers.HelloController
+	// procyon:module-controller-fields
+	hello *controllers.HelloController
 }
 
 func run() error {
-	logger := internal.NewLogger()
+	logger := logging.NewLogger()
 
 	if err := i18n.LoadTranslations(); err != nil {
 		logger.GetLogger().Fatal("failed to load translations", zap.Error(err))
@@ -43,49 +47,68 @@ func run() error {
 		configPath = "config/config.json"
 	}
 
-	config := internal.LoadConfiguration(configPath)
+	config, err := coreconfig.Read(configPath)
+	if err != nil {
+		return err
+	}
 	obsConfig := config.Observability.WithDefaults(appVersion, config.AppName, config.Prod)
-	logger = internal.NewLoggerWithConfig(
+	logger = logging.NewLoggerWithConfig(
 		config.Logging,
 		zap.String("service", obsConfig.ServiceName),
 		zap.String("env", obsConfig.Environment),
 		zap.String("version", obsConfig.ServiceVersion),
 	)
 
-	db := internal.NewDatabaseConnection(config)
-	casbinAuthz, err := authz.NewCasbinAuthorizer(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs)
+	db, err := coreconfig.Connect(config)
 	if err != nil {
-		logger.GetLogger().Fatal("failed to initialize casbin", zap.Error(err))
+		return err
 	}
-
 	obs, err := telemetry.New(context.Background(), obsConfig, logger.GetLogger(), db)
 	if err != nil {
-		logger.GetLogger().Fatal("failed to initialize telemetry", zap.Error(err))
+		return fmt.Errorf("initialize telemetry: %w", err)
 	}
 
 	if migrate {
 		if err := internal.MigrateRun(db, config); err != nil {
-			logger.GetLogger().Fatal("failed to run migrations", zap.Error(err))
+			return err
 		}
 	}
 
 	appStore := store.NewAppStore(db, &config)
 	appService := services.NewAppService(appStore, logger.GetLogger(), obs.BusinessMetrics())
+	_ = appService
 
 	var kratosAuth *mid.KratosAuth
-	switch config.AuthProvider() {
-	case "kratos":
-		kratosAuth = mid.NewKratosAuth(config.AuthBaseURL())
-	default:
-		logger.GetLogger().Fatal("unsupported auth provider", zap.String("provider", config.AuthProvider()))
+	if config.AuthEnabled() {
+		switch config.AuthProvider() {
+		case "kratos":
+			kratosAuth = mid.NewKratosAuth(config.AuthBaseURL())
+		default:
+			return fmt.Errorf("unsupported auth provider %q", config.AuthProvider())
+		}
+	}
+
+	var rbac *mid.CasbinRBAC
+	if config.RBACEnabled() {
+		casbinAuthz, err := authz.NewCasbinAuthorizerWithPolicies(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs, applicationPolicies)
+		if err != nil {
+			return fmt.Errorf("initialize casbin: %w", err)
+		}
+		rbac = mid.NewCasbinRBAC(casbinAuthz)
+	}
+
+	var adminAuth *mid.AdminKeyAuth
+	if config.AdminEnabled() {
+		adminAuth = mid.NewAdminKeyAuth(config.Admin.SecretKey)
 	}
 
 	app := &application{
 		obs:        obs,
 		kratosAuth: kratosAuth,
-		rbac:       mid.NewCasbinRBAC(casbinAuthz),
-		adminAuth:  mid.NewAdminKeyAuth(config.Admin.SecretKey),
-		hello:      controllers.NewHelloController(appService, logger.GetLogger()),
+		rbac:       rbac,
+		adminAuth:  adminAuth,
+		// procyon:module-controller-init
+		hello: controllers.NewHelloController(appService, logger.GetLogger()),
 	}
 
 	public := newPublicServer(config, obs)
@@ -148,7 +171,7 @@ func run() error {
 	return nil
 }
 
-func newPublicServer(config internal.Config, obs *telemetry.Manager) *echo.Echo {
+func newPublicServer(config coreconfig.Config, obs *telemetry.Manager) *echo.Echo {
 	e := newBaseServer()
 	e.Server.ReadTimeout = 15 * time.Second
 	e.Server.WriteTimeout = 30 * time.Second
@@ -186,8 +209,8 @@ func newUploadServer() *echo.Echo {
 func newBaseServer() *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
-	e.HTTPErrorHandler = apierr.Handler(internal.NewLogger().GetLogger())
-	e.Validator = internal.NewInputValidator()
+	e.HTTPErrorHandler = apierr.Handler(logging.NewLogger().GetLogger())
+	e.Validator = validation.NewInputValidator()
 	e.Server.ReadHeaderTimeout = 5 * time.Second
 
 	e.Use(middleware.RequestID())

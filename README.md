@@ -14,6 +14,7 @@ config/
 controllers/
 internal/
 models/
+policies.go
 services/
 static/
 store/
@@ -22,16 +23,9 @@ main.go
 
 ## What's included
 
-- `internal/config.go` with configuration loading and MySQL/PostgreSQL connection setup
-- `internal/logger.go` with `zap` JSON logging to stdout and optional daily files
-- `internal/telemetry/` with OpenTelemetry traces, OpenMetrics, health/readiness/info handlers and HTTP request logging
-- `internal/authz/` with Casbin model, default policies and role helpers
-- `internal/apierr/` with a shared API error envelope and Echo error handler
-- `internal/validator.go`
-- `internal/middleware/language.go`
-- `internal/middleware/kratos_auth.go` with auth based on ORY Kratos session auth
-- `internal/middleware/casbin_authz.go` with Casbin RBAC middleware
-- `internal/middleware/admin_key_auth.go` for simple admin/internal endpoints
+- versioned `github.com/bartek5186/procyon-core` dependency with configuration,
+  database, logging, telemetry, API errors, validation, auth and middleware
+- application-owned Casbin policies in `policies.go`
 - `internal/i18n/` with a simple translation loader
 - `models.HelloMessage` as an example model
 - `HelloController`, `HelloService`, `HelloStore`
@@ -60,6 +54,18 @@ go run . -config=config/config.postgres.example.json -migrate=true
 Use:
 - `config/config.example.json` for MySQL
 - `config/config.postgres.example.json` for PostgreSQL
+
+## Framework Updates
+
+Shared infrastructure is supplied by the versioned `procyon-core` Go module.
+Update it from an application directory with:
+
+```bash
+procyon-cli update
+```
+
+This updates the dependency and runs `go mod tidy` plus `go test ./...`.
+Application routes, domain code, policies and migrations are not overwritten.
 
 ## Project Init
 
@@ -161,7 +167,7 @@ Errors use a shared envelope:
 }
 ```
 
-Use `internal/apierr` in controllers and middleware instead of ad hoc `{"error": "..."}` responses.
+Use `github.com/bartek5186/procyon-core/apierr` in controllers and middleware instead of ad hoc `{"error": "..."}` responses.
 
 ## Docker
 

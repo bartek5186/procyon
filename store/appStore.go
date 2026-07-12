@@ -1,27 +1,30 @@
 package store
 
 import (
-	"github.com/bartek5186/procyon/internal"
+	coreconfig "github.com/bartek5186/procyon-core/config"
 	"gorm.io/gorm"
 )
 
 type Datastore interface {
 	Db() *gorm.DB
-	Config() *internal.Config
+	Config() *coreconfig.Config
+	// procyon:module-store-interface
 	Hello() *HelloStore
 }
 
 type AppStore struct {
 	db     *gorm.DB
-	config *internal.Config
-	hello  *HelloStore
+	config *coreconfig.Config
+	// procyon:module-store-fields
+	hello *HelloStore
 }
 
-func NewAppStore(db *gorm.DB, cfg *internal.Config) *AppStore {
+func NewAppStore(db *gorm.DB, cfg *coreconfig.Config) *AppStore {
 	return &AppStore{
 		db:     db,
 		config: cfg,
-		hello:  NewHelloStore(db),
+		// procyon:module-store-init
+		hello: NewHelloStore(db),
 	}
 }
 
@@ -29,10 +32,12 @@ func (s *AppStore) Db() *gorm.DB {
 	return s.db
 }
 
-func (s *AppStore) Config() *internal.Config {
+func (s *AppStore) Config() *coreconfig.Config {
 	return s.config
 }
 
 func (s *AppStore) Hello() *HelloStore {
 	return s.hello
 }
+
+// procyon:module-store-methods

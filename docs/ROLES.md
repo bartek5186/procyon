@@ -53,17 +53,12 @@ casbin_rule
 
 The app seeds base policies on startup when RBAC is enabled.
 
-Current base policies live in `internal/authz/casbin.go`:
+Application policies live in `policies.go`:
 
 ```go
-var defaultPolicies = [][]string{
-    {RoleUser, "hello", "read"},
-    {RoleAdmin, "hello", "manage"},
-    {RoleAdmin, "admin", "manage"},
-}
-
-var defaultRoleHierarchy = [][]string{
-    {RoleAdmin, RoleUser},
+var applicationPolicies = []authz.Policy{
+    {Role: authz.RoleUser, Domain: "*", Object: "hello", Action: "read"},
+    {Role: authz.RoleAdmin, Domain: "*", Object: "hello", Action: "manage"},
 }
 ```
 
@@ -71,57 +66,16 @@ This means:
 
 - `user` can `read` `hello`
 - `admin` can `manage` `hello`
-- `admin` can `manage` `admin`
-- `admin` inherits `user`
+- `admin` also receives the framework wildcard policy
 
-## Adding A Role
+## Adding Policies
 
-Add the role constant in `internal/authz/roles.go`:
-
-```go
-const (
-    RoleUser    = "user"
-    RoleAdmin   = "admin"
-    RoleManager = "manager"
-)
-```
-
-Then allow it in `NormalizeRole`:
+Add domain policies in `policies.go`:
 
 ```go
-func NormalizeRole(raw string) (string, bool) {
-    role := strings.ToLower(strings.TrimSpace(raw))
-    switch role {
-    case RoleUser, "account", "regular", "member":
-        return RoleUser, true
-    case RoleAdmin:
-        return RoleAdmin, true
-    case RoleManager:
-        return RoleManager, true
-    default:
-        return "", false
-    }
-}
-```
-
-Add policies in `internal/authz/casbin.go`:
-
-```go
-var defaultPolicies = [][]string{
-    {RoleUser, "hello", "read"},
-    {RoleManager, "reports", "read"},
-    {RoleAdmin, "hello", "manage"},
-    {RoleAdmin, "reports", "manage"},
-    {RoleAdmin, "admin", "manage"},
-}
-```
-
-Optionally add hierarchy:
-
-```go
-var defaultRoleHierarchy = [][]string{
-    {RoleManager, RoleUser},
-    {RoleAdmin, RoleManager},
+var applicationPolicies = []authz.Policy{
+    {Role: authz.RoleUser, Domain: "*", Object: "reports", Action: "read"},
+    {Role: authz.RoleAdmin, Domain: "*", Object: "reports", Action: "manage"},
 }
 ```
 
@@ -130,26 +84,29 @@ var defaultRoleHierarchy = [][]string{
 Routes are protected in `main.go` with:
 
 ```go
-secured.GET("/hello", helloController.HelloAuthenticated, rbac.Require("hello", "read"))
-securedAdmin.GET("/hello", helloController.HelloAdmin, rbac.Require("hello", "manage"))
+secured.GET("/hello", helloController.HelloAuthenticated, rbac.Require("*", "hello", "read"))
+securedAdmin.GET("/hello", helloController.HelloAdmin, rbac.Require("*", "hello", "manage"))
 ```
 
 Pattern:
 
 ```go
-rbac.Require("<object>", "<action>")
+rbac.Require("<domain>", "<object>", "<action>")
 ```
 
 Examples:
 
 ```go
-rbac.Require("reports", "read")
-rbac.Require("reports", "manage")
-rbac.Require("payments", "refund")
-rbac.Require("admin", "manage")
+rbac.Require("*", "reports", "read")
+rbac.Require("*", "reports", "manage")
+rbac.Require("club:123", "payments", "refund")
 ```
 
 Keep object/action names stable and small. Avoid dynamic names such as IDs in the policy object.
+
+For scoped domains such as `club:123`, configure `authz.Options.DomainAccess`.
+Without a resolver, Procyon permits only the global `*` domain and denies
+scoped domains by default.
 
 ## Assigning Roles
 

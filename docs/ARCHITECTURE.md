@@ -8,7 +8,8 @@ To nie jest czysta architektura heksagonalna ani DDD. To praktyczna architektura
 
 Do tego dochodzą:
 - `models` jako wspólne struktury domenowe, DTO i mapery,
-- `internal` jako kod infrastrukturalny i cross-cutting,
+- `procyon-core` jako wersjonowany kod infrastrukturalny i cross-cutting,
+- `internal` jako prywatny kod aplikacji, przede wszystkim i18n i migracje,
 - background jobs uruchamiane przy starcie aplikacji,
 - integracje zewnętrzne trzymane w `services`.
 - opcjonalne moduły infrastrukturalne sterowane konfiguracją: auth, RBAC i admin endpoints.
@@ -21,7 +22,9 @@ Każda warstwa ma wąski zakres odpowiedzialności:
 - `services/` zawiera logikę aplikacyjną i orkiestrację use-case.
 - `store/` wykonuje operacje DB przez GORM i transakcje.
 - `models/` przechowuje encje GORM, DTO wejścia/wyjścia i mapowanie danych.
-- `internal/` zawiera konfigurację, logger, walidator, middleware, i18n, migracje i inne elementy infrastrukturalne.
+- `procyon-core` zawiera konfigurację, logger, walidator, middleware, auth,
+  błędy API i telemetry aktualizowane przez moduł Go.
+- `internal/` zawiera prywatne elementy aplikacji, takie jak i18n i migracje.
 
 Najważniejsza reguła: nie mieszaj odpowiedzialności między warstwami.
 
@@ -30,7 +33,8 @@ Najważniejsza reguła: nie mieszaj odpowiedzialności między warstwami.
 ```text
 config/        konfiguracja JSON i pliki credentials
 controllers/   handlery Echo i mapowanie HTTP <-> service
-internal/      config, logger, middleware, validator, i18n, migracje, helpers
+internal/      prywatne i18n, migracje i helpery aplikacji
+policies.go    polityki RBAC należące do aplikacji
 models/        encje GORM, input/output DTO, mapery
 services/      use-case, logika biznesowa, integracje zewnętrzne, cron/background jobs
 store/         dostęp do danych przez GORM
@@ -226,7 +230,7 @@ Walidacja jest dwupoziomowa:
 - walidacja transportowa w kontrolerze: bind, format, wymagane pola, path/query parsing,
 - walidacja biznesowa w serwisie: reguły domenowe, spójność danych, capability, ownership flow.
 
-Walidacje wspólne trzymaj w `internal/validator.go`.
+Walidacje wspólne rozwijaj w pakiecie `procyon-core/validation`, a walidacje domenowe w aplikacji.
 
 ### 7.3 Błędy i statusy
 
@@ -268,9 +272,9 @@ Nie wypychaj do kontrolera skomplikowanego składania odpowiedzi z wielu relacji
 
 Są dwa główne tryby:
 
-- user auth przez ORY Kratos w `internal/middleware/kratos_auth.go`,
-- authz przez Casbin w `internal/authz/` i `internal/middleware/casbin_authz.go`,
-- admin/internal auth przez secret key w `internal/middleware/admin_key_auth.go`.
+- user auth przez ORY Kratos w `procyon-core/middleware`,
+- authz przez Casbin w `procyon-core/authz` i `procyon-core/middleware`,
+- admin/internal auth przez secret key w `procyon-core/middleware`.
 
 Te moduły są przełączane konfiguracją:
 
