@@ -32,6 +32,9 @@ func (*Plugin) RegisterRoutes(routes Routes) {
 	routes.Admin.DELETE("/payments/:id", removePayment)
 }
 `)
+	writePostmanTestFile(t, filepath.Join(plugin, "docs", "postman", "examples.json"), `{
+  "examples": [{"key":"POST /v1/payments/checkout","request":{"headers":{"Idempotency-Key":"{{$guid}}"}}}]
+}`)
 
 	generator := &generator{root: project}
 	routes, err := generator.collectPluginRoutes()
@@ -48,6 +51,26 @@ func (*Plugin) RegisterRoutes(routes Routes) {
 		if item.Folder != "Plugins/Payment System" {
 			t.Fatalf("unexpected folder %q", item.Folder)
 		}
+	}
+}
+
+func TestManualExampleAppliesHeaders(t *testing.T) {
+	req := &postmanRequest{Method: "POST"}
+	applyManualRequestExample(req, manualExampleRequest{Headers: map[string]string{"Idempotency-Key": "{{$guid}}"}})
+	if len(req.Header) != 1 || req.Header[0].Key != "Idempotency-Key" {
+		t.Fatalf("headers = %+v", req.Header)
+	}
+}
+
+func TestManualExamplesMatchConcretePluginRouteParameters(t *testing.T) {
+	generator := &generator{manualExamples: map[string][]manualExample{
+		"POST /v1/payments/verify/google": {{Name: "Google"}},
+		"POST /v1/payments/verify/apple":  {{Name: "Apple"}},
+		"POST /v1/payments/history":       {{Name: "Wrong route"}},
+	}}
+	examples := generator.manualExamplesForRoute(route{Method: "POST", Path: "/v1/payments/verify/:provider"})
+	if len(examples) != 2 || examples[0].Name != "Apple" || examples[1].Name != "Google" {
+		t.Fatalf("unexpected parameter examples: %+v", examples)
 	}
 }
 

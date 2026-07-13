@@ -145,9 +145,10 @@ type manualExample struct {
 }
 
 type manualExampleRequest struct {
-	Path  map[string]string `json:"path,omitempty"`
-	Query map[string]string `json:"query,omitempty"`
-	Body  json.RawMessage   `json:"body,omitempty"`
+	Path    map[string]string `json:"path,omitempty"`
+	Query   map[string]string `json:"query,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
 type manualExampleResponse struct {
@@ -244,6 +245,9 @@ func (g *generator) load() error {
 }
 
 func (g *generator) loadManualExamples(dir string) error {
+	if g.manualExamples == nil {
+		g.manualExamples = map[string][]manualExample{}
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -642,6 +646,9 @@ func (g *generator) collectPluginRoutes() ([]route, error) {
 		source, err := g.pluginPackageDir(module)
 		if err != nil {
 			return nil, fmt.Errorf("resolve plugin %s for Postman: %w", name, err)
+		}
+		if err := g.loadManualExamples(filepath.Join(source, "docs", "postman")); err != nil {
+			return nil, fmt.Errorf("load plugin %s Postman examples: %w", name, err)
 		}
 		pluginRoutes, err := collectRoutesFromPlugin(source, name)
 		if err != nil {
@@ -1159,6 +1166,19 @@ func applyManualRequestExample(req *postmanRequest, example manualExampleRequest
 			}
 		}
 	}
+	for key, value := range example.Headers {
+		found := false
+		for i := range req.Header {
+			if strings.EqualFold(req.Header[i].Key, key) {
+				req.Header[i].Value = value
+				found = true
+				break
+			}
+		}
+		if !found {
+			req.Header = append(req.Header, postmanHeader{Key: key, Value: value, Type: "text"})
+		}
+	}
 	if len(example.Body) > 0 && string(example.Body) != "null" && methodCanHaveBody(req.Method) {
 		var body any
 		if err := json.Unmarshal(example.Body, &body); err == nil {
@@ -1192,7 +1212,40 @@ func upsertContentTypeJSON(headers []postmanHeader) []postmanHeader {
 }
 
 func (g *generator) manualExamplesForRoute(r route) []manualExample {
-	return g.manualExamples[r.Method+" "+cleanPath(r.Path)]
+	exactKey := r.Method + " " + cleanPath(r.Path)
+	examples := append([]manualExample(nil), g.manualExamples[exactKey]...)
+	for key, candidates := range g.manualExamples {
+		if key == exactKey {
+			continue
+		}
+		method, path, found := strings.Cut(key, " ")
+		if !found || method != r.Method || !routeExamplePathMatches(r.Path, path) {
+			continue
+		}
+		examples = append(examples, candidates...)
+	}
+	sort.SliceStable(examples, func(i, j int) bool { return examples[i].Name < examples[j].Name })
+	return examples
+}
+
+func routeExamplePathMatches(routePath, examplePath string) bool {
+	routeParts := strings.Split(strings.Trim(cleanPath(routePath), "/"), "/")
+	exampleParts := strings.Split(strings.Trim(cleanPath(examplePath), "/"), "/")
+	if len(routeParts) != len(exampleParts) {
+		return false
+	}
+	for index := range routeParts {
+		if strings.HasPrefix(routeParts[index], ":") {
+			if exampleParts[index] == "" {
+				return false
+			}
+			continue
+		}
+		if routeParts[index] != exampleParts[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func clonePostmanRequest(req *postmanRequest) *postmanRequest {
