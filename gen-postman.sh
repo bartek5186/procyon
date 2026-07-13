@@ -11,7 +11,7 @@ set -eu
 
 OUT="${POSTMAN_COLLECTION_FILE:-docs/json/PostmanCollection.generated.json}"
 
-GOCACHE=/tmp/procyon-go-build-cache go run ./tools/postman-gen \
+GOWORK=off GOCACHE=/tmp/procyon-go-build-cache go run ./tools/postman-gen \
   -root . \
   -out "$OUT" \
   -base-url "${POSTMAN_BASE_URL:-}" \

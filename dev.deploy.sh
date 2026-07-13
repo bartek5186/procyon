@@ -27,6 +27,11 @@ rsync -avz static/ "$REMOTE:$REMOTE_DIR/static/"
 if $WITH_CONFIG; then
   echo "==> Wysyłam runtime config z $CONFIG_SOURCE"
   rsync -avz "$CONFIG_SOURCE" "$REMOTE:$REMOTE_DIR/config/$REMOTE_CONFIG_NAME"
+
+	if [[ -f config/plugins.generated.json ]]; then
+		echo "==> Wysyłam wygenerowaną konfigurację pluginów"
+		rsync -avz config/plugins.generated.json "$REMOTE:$REMOTE_DIR/config/plugins.generated.json"
+	fi
 fi
 
 echo "==> Restartuję Dockera na serwerze"
@@ -36,4 +41,3 @@ echo "==> Status"
 ssh "$REMOTE" "cd '$REMOTE_DIR' && docker compose ps"
 
 echo "Deploy produkcyjny zakończony."
-

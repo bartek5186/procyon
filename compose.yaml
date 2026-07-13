@@ -16,6 +16,7 @@ services:
       - "8082:8082"
     volumes:
       - ./config/config.docker.json:/app/config/config.json:ro
+      - ./config/plugins.generated.json:/app/config/plugins.generated.json:ro
       - app-logs:/app/log
     extra_hosts:
       - "host.docker.internal:host-gateway"

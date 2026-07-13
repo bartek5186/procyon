@@ -93,6 +93,12 @@ Obsługiwane tryby auth: `kratos-casbin`, `kratos`, `admin`, `none`.
 
 Runtime config jest w plikach JSON. Aplikacja nie nakłada override'ów ze zmiennych środowiskowych dla ustawień app, auth, bazy, logowania ani obserwowalności.
 
+Zainstalowane pluginy dostarczają konfigurację w osobnej warstwie
+`config/plugins.generated.json`. Procyon Core składa ją z wybranym głównym
+configiem. Jawny wpis `plugins.<nazwa>` w głównym configu ma pierwszeństwo przed
+wygenerowaną wartością domyślną. Sekrety pluginu mogą nadal pochodzić ze
+zmiennych środowiskowych zadeklarowanych w manifeście pluginu.
+
 ## Moduły Opcjonalne
 
 Template pozwala wyłączyć moduły infrastrukturalne bez usuwania kodu:
@@ -152,6 +158,19 @@ Generator tworzy szkielety:
 
 Z `--with-wiring` generator podpina też `store.AppStore` i `services.AppService`.
 Po wygenerowaniu trzeba ręcznie zarejestrować kontroler i routing w `main.go`, a potem sprawdzić wygenerowane migracje.
+
+## Kolekcja Postmana
+
+Kolekcję aplikacji wygenerujesz przez:
+
+```bash
+./gen-postman.sh
+```
+
+Generator skanuje routing aplikacji oraz wszystkie zainstalowane pluginy Go
+zapisane w `.procyon.json`. Trasy pluginów są odczytywane z ich metod
+`RegisterRoutes`, umieszczane w `Plugins/<nazwa pluginu>` i zachowują właściwy
+tryb dostępu: publiczny, bearer albo admin.
 
 ## Błędy API
 

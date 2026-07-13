@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -21,7 +22,14 @@ type route struct {
 	DisplayName string
 	Folder      string
 	Admin       bool
+	AuthMode    string
 }
+
+const (
+	routeAuthPublic = "public"
+	routeAuthBearer = "bearer"
+	routeAuthAdmin  = "admin"
+)
 
 type postmanCollection struct {
 	Info     postmanInfo   `json:"info"`
@@ -189,6 +197,11 @@ func main() {
 	gen.collectHandlerBodies()
 
 	routes := gen.collectRoutes()
+	pluginRoutes, err := gen.collectPluginRoutes()
+	if err != nil {
+		fatal(err)
+	}
+	routes = mergeRoutes(routes, pluginRoutes)
 	vars := resolveCollectionVars(*root, *configPath, *baseURL, *adminURL, *uploadURL, *adminKey, *authKey)
 	collection := gen.collection(*name, routes, vars)
 
@@ -584,6 +597,278 @@ func (g *generator) collectRoutes() []route {
 		return out[i].Path < out[j].Path
 	})
 	return out
+}
+
+type postmanProjectMetadata struct {
+	Modules map[string]postmanInstalledModule `json:"modules,omitempty"`
+}
+
+type postmanInstalledModule struct {
+	Enabled     *bool  `json:"enabled,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	GoModule    string `json:"go_module,omitempty"`
+	Package     string `json:"package,omitempty"`
+	LocalSource string `json:"local_source,omitempty"`
+}
+
+type pluginRouteGroup struct {
+	Path     string
+	AuthMode string
+}
+
+func (g *generator) collectPluginRoutes() ([]route, error) {
+	content, err := os.ReadFile(filepath.Join(g.root, ".procyon.json"))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var metadata postmanProjectMetadata
+	if err := json.Unmarshal(content, &metadata); err != nil {
+		return nil, fmt.Errorf("parse .procyon.json for Postman plugins: %w", err)
+	}
+	names := make([]string, 0, len(metadata.Modules))
+	for name, module := range metadata.Modules {
+		if module.Kind == "go-plugin" && (module.Enabled == nil || *module.Enabled) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+
+	var routes []route
+	for _, name := range names {
+		module := metadata.Modules[name]
+		source, err := g.pluginPackageDir(module)
+		if err != nil {
+			return nil, fmt.Errorf("resolve plugin %s for Postman: %w", name, err)
+		}
+		pluginRoutes, err := collectRoutesFromPlugin(source, name)
+		if err != nil {
+			return nil, fmt.Errorf("collect plugin %s routes: %w", name, err)
+		}
+		routes = append(routes, pluginRoutes...)
+	}
+	return routes, nil
+}
+
+func (g *generator) pluginPackageDir(module postmanInstalledModule) (string, error) {
+	if source := strings.TrimSpace(module.LocalSource); source != "" {
+		if !filepath.IsAbs(source) {
+			source = filepath.Join(g.root, source)
+		}
+		if suffix := packageSuffix(module.GoModule, module.Package); suffix != "" {
+			source = filepath.Join(source, filepath.FromSlash(suffix))
+		}
+		return filepath.Abs(source)
+	}
+	packagePath := strings.TrimSpace(module.Package)
+	if packagePath == "" {
+		packagePath = strings.TrimSpace(module.GoModule)
+	}
+	if packagePath == "" {
+		return "", fmt.Errorf("missing package and go_module metadata")
+	}
+	return goPackageDir(g.root, packagePath)
+}
+
+func packageSuffix(modulePath, packagePath string) string {
+	modulePath = strings.TrimSuffix(strings.TrimSpace(modulePath), "/")
+	packagePath = strings.TrimSpace(packagePath)
+	if modulePath == "" || packagePath == modulePath {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(packagePath, modulePath), "/")
+}
+
+func goPackageDir(root, packagePath string) (string, error) {
+	run := func(disableWorkspace bool) (string, error) {
+		cmd := exec.Command("go", "list", "-f={{.Dir}}", packagePath)
+		cmd.Dir = root
+		if disableWorkspace {
+			cmd.Env = withEnvironment(os.Environ(), "GOWORK", "off")
+		}
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("go list %s: %s", packagePath, strings.TrimSpace(string(output)))
+		}
+		return strings.TrimSpace(string(output)), nil
+	}
+	directory, err := run(false)
+	if err == nil && directory != "" {
+		return directory, nil
+	}
+	return run(true)
+}
+
+func withEnvironment(environment []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(environment)+1)
+	for _, item := range environment {
+		if !strings.HasPrefix(item, prefix) {
+			out = append(out, item)
+		}
+	}
+	return append(out, prefix+value)
+}
+
+func collectRoutesFromPlugin(root, moduleName string) ([]route, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
+	var routes []route
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			return nil, err
+		}
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Name.Name != "RegisterRoutes" || function.Body == nil {
+				continue
+			}
+			parameter := firstParamName(function)
+			if parameter == "" {
+				continue
+			}
+			groups := map[string]pluginRouteGroup{}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				switch value := node.(type) {
+				case *ast.AssignStmt:
+					capturePluginGroup(value, parameter, groups)
+				case *ast.CallExpr:
+					pluginRoute, ok := pluginRouteFromCall(value, parameter, groups, moduleName)
+					if !ok {
+						return true
+					}
+					key := pluginRoute.Method + " " + pluginRoute.Path
+					if !seen[key] {
+						seen[key] = true
+						routes = append(routes, pluginRoute)
+					}
+				}
+				return true
+			})
+		}
+	}
+	sortRoutes(routes)
+	return routes, nil
+}
+
+func capturePluginGroup(assign *ast.AssignStmt, routesParameter string, groups map[string]pluginRouteGroup) {
+	if len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+		return
+	}
+	name, ok := assign.Lhs[0].(*ast.Ident)
+	if !ok {
+		return
+	}
+	call, ok := assign.Rhs[0].(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Group" {
+		return
+	}
+	parent, ok := resolvePluginGroup(selector.X, routesParameter, groups)
+	if !ok {
+		return
+	}
+	path, ok := stringLiteral(call.Args[0])
+	if !ok {
+		return
+	}
+	parent.Path = cleanPath(parent.Path + path)
+	groups[name.Name] = parent
+}
+
+func pluginRouteFromCall(call *ast.CallExpr, routesParameter string, groups map[string]pluginRouteGroup, moduleName string) (route, bool) {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || len(call.Args) < 2 {
+		return route{}, false
+	}
+	method := strings.ToUpper(selector.Sel.Name)
+	if !isHTTPRegistration(method) {
+		return route{}, false
+	}
+	group, ok := resolvePluginGroup(selector.X, routesParameter, groups)
+	if !ok {
+		return route{}, false
+	}
+	path, ok := stringLiteral(call.Args[0])
+	if !ok {
+		return route{}, false
+	}
+	if method == "ANY" {
+		method = "POST"
+	}
+	handler := handlerName(call.Args[1])
+	return route{
+		Method: method, Path: cleanPath(group.Path + path), Handler: handler,
+		DisplayName: routeDisplayName(handler, ""),
+		Folder:      "Plugins/" + titleForSegment(moduleName),
+		Admin:       group.AuthMode == routeAuthAdmin,
+		AuthMode:    group.AuthMode,
+	}, true
+}
+
+func resolvePluginGroup(expression ast.Expr, routesParameter string, groups map[string]pluginRouteGroup) (pluginRouteGroup, bool) {
+	if identifier, ok := expression.(*ast.Ident); ok {
+		group, found := groups[identifier.Name]
+		return group, found
+	}
+	selector, ok := expression.(*ast.SelectorExpr)
+	if !ok {
+		return pluginRouteGroup{}, false
+	}
+	root, ok := selector.X.(*ast.Ident)
+	if !ok || root.Name != routesParameter {
+		return pluginRouteGroup{}, false
+	}
+	switch selector.Sel.Name {
+	case "Public":
+		return pluginRouteGroup{Path: "/v1", AuthMode: routeAuthPublic}, true
+	case "Authenticated":
+		return pluginRouteGroup{Path: "/v1", AuthMode: routeAuthBearer}, true
+	case "Admin":
+		return pluginRouteGroup{Path: "/v1/admin", AuthMode: routeAuthAdmin}, true
+	default:
+		return pluginRouteGroup{}, false
+	}
+}
+
+func mergeRoutes(groups ...[]route) []route {
+	seen := map[string]bool{}
+	var routes []route
+	for _, group := range groups {
+		for _, item := range group {
+			key := item.Method + " " + item.Path + " " + item.Handler
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			routes = append(routes, item)
+		}
+	}
+	sortRoutes(routes)
+	return routes
+}
+
+func sortRoutes(routes []route) {
+	sort.Slice(routes, func(i, j int) bool {
+		if routes[i].Path == routes[j].Path {
+			return routes[i].Method < routes[j].Method
+		}
+		return routes[i].Path < routes[j].Path
+	})
 }
 
 func (g *generator) captureGroup(assign *ast.AssignStmt, env map[string]string) {
@@ -1822,6 +2107,12 @@ func routeUsesUploadURL(r route) bool {
 func routeRequiresBearerAuth(r route) bool {
 	if r.Admin || isAdminRoute(r.Path) {
 		return false
+	}
+	if r.AuthMode == routeAuthPublic {
+		return false
+	}
+	if r.AuthMode == routeAuthBearer {
+		return true
 	}
 	if routeUsesUploadURL(r) {
 		return true

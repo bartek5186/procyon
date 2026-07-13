@@ -93,6 +93,12 @@ Supported auth values: `kratos-casbin`, `kratos`, `admin`, `none`.
 
 Runtime configuration lives in JSON files. The application does not apply environment variable overrides for app, auth, database, logging, or observability settings.
 
+Installed plugins contribute namespaced defaults through
+`config/plugins.generated.json`. Procyon Core composes that generated layer with
+the selected base config. An explicit `plugins.<name>` entry in the base config
+takes precedence over the generated default. Plugin-owned credentials may still
+be read from environment variables declared by the plugin manifest.
+
 ## Optional Modules
 
 The template can disable infrastructure modules without removing code:
@@ -152,6 +158,19 @@ The generator creates skeletons:
 
 With `--with-wiring`, the generator also wires `store.AppStore` and `services.AppService`.
 After generation, manually register the controller and routes in `main.go`, then review the generated migrations.
+
+## Postman Collection
+
+Generate the application collection with:
+
+```bash
+./gen-postman.sh
+```
+
+The generator scans application routes and all installed Go plugins recorded in
+`.procyon.json`. Plugin routes are read from their `RegisterRoutes` methods and
+placed under `Plugins/<plugin name>`, preserving public, bearer-authenticated and
+admin access modes.
 
 ## API Errors
 
