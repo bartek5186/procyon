@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,15 +29,23 @@ type Plugin struct{}
 
 func (*Plugin) RegisterRoutes(routes Routes) {
 	if routes.Public != nil {
-		routes.Public.GET("/payments/prices/:provider", priceList)
+		routes.Public.GET("/payments/prices/:provider", controller.PriceList)
 	}
 	payments := routes.Authenticated.Group("/payments")
 	payments.POST("/checkout", checkout)
 	routes.Admin.DELETE("/payments/:id", removePayment)
 }
 `)
+	writePostmanTestFile(t, filepath.Join(plugin, "controllers", "controller.go"), `package controllers
+
+type Controller struct{}
+
+// PriceList returns the purchasable products exposed by one payment provider.
+// The provider path parameter can be stripe, google, or apple.
+func (*Controller) PriceList() {}
+`)
 	writePostmanTestFile(t, filepath.Join(plugin, "docs", "postman", "examples.json"), `{
-  "examples": [{"key":"POST /v1/payments/checkout","request":{"headers":{"Idempotency-Key":"{{$guid}}"}}}]
+  "examples": [{"key":"POST /v1/payments/checkout","name":"Stripe checkout","request":{"headers":{"Idempotency-Key":"{{$guid}}"}},"response":{"status":201,"body":{"checkout_url":"https://checkout.stripe.com/example"}}}]
 }`)
 
 	generator := &generator{root: project}
@@ -59,6 +68,14 @@ func (*Plugin) RegisterRoutes(routes Routes) {
 	if len(collection.Item) != 1 || collection.Item[0].Name != "Payment System" {
 		t.Fatalf("plugin collection root = %+v, want Payment System", collection.Item)
 	}
+	priceList := findPostmanItem(collection.Item[0].Item, "PriceList")
+	if priceList == nil || priceList.Request == nil || !strings.Contains(priceList.Request.Description, "purchasable products") {
+		t.Fatalf("plugin request docs were not generated: %+v", priceList)
+	}
+	checkout := findPostmanItem(collection.Item[0].Item, "checkout")
+	if checkout == nil || len(checkout.Response) != 1 || checkout.Response[0].Name != "201 Created - Stripe checkout" {
+		t.Fatalf("named plugin response example was not generated: %+v", checkout)
+	}
 }
 
 func TestManualExampleAppliesHeaders(t *testing.T) {
@@ -78,6 +95,19 @@ func TestManualExamplesMatchConcretePluginRouteParameters(t *testing.T) {
 	examples := generator.manualExamplesForRoute(route{Method: "POST", Path: "/v1/payments/verify/:provider"})
 	if len(examples) != 2 || examples[0].Name != "Apple" || examples[1].Name != "Google" {
 		t.Fatalf("unexpected parameter examples: %+v", examples)
+	}
+}
+
+func TestManualExamplesPlaceDefaultVariantFirst(t *testing.T) {
+	generator := &generator{manualExamples: map[string][]manualExample{
+		"POST /v1/payments/checkout": {
+			{Name: "Validation error"},
+			{Name: "Stripe success", Default: true},
+		},
+	}}
+	examples := generator.manualExamplesForRoute(route{Method: "POST", Path: "/v1/payments/checkout"})
+	if len(examples) != 2 || examples[0].Name != "Stripe success" {
+		t.Fatalf("default example is not first: %+v", examples)
 	}
 }
 
@@ -225,6 +255,15 @@ func assertGeneratedRoute(t *testing.T, routes []route, method, path, displayNam
 		}
 	}
 	t.Fatalf("missing route %s %s in %+v", method, path, routes)
+}
+
+func findPostmanItem(items []postmanItem, name string) *postmanItem {
+	for index := range items {
+		if items[index].Name == name {
+			return &items[index]
+		}
+	}
+	return nil
 }
 
 func writePostmanTestFile(t *testing.T, path, body string) {

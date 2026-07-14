@@ -169,8 +169,45 @@ Generate the application collection with:
 
 The generator scans application routes and all installed Go plugins recorded in
 `.procyon.json`. Plugin routes are read from their `RegisterRoutes` methods and
-placed under `Plugins/<plugin name>`, preserving public, bearer-authenticated and
-admin access modes.
+placed in a top-level folder named after the plugin, preserving public,
+bearer-authenticated and admin access modes.
+
+Go documentation comments above controller handlers become the request
+description displayed in Postman's **Docs** tab. Keep these comments focused on
+the endpoint contract: authentication, inputs, side effects, provider-specific
+behavior and stable errors.
+
+Plugins can provide multiple named request and response variants in
+`docs/postman/*.json`. The generator matches each example by `METHOD /path` and
+uses it instead of the generic inferred response:
+
+```json
+{
+  "module": "payment-system",
+  "version": 2,
+  "examples": [
+    {
+      "key": "POST /v1/payments/checkout",
+      "name": "Stripe one-time checkout",
+      "default": true,
+      "request": {
+        "headers": {"Idempotency-Key": "{{$guid}}"},
+        "body": {"provider": "stripe", "price_id": "price_example"}
+      },
+      "response": {
+        "status": 201,
+        "body": {"checkout_url": "https://checkout.stripe.com/example"}
+      }
+    }
+  ]
+}
+```
+
+Use `default: true` for the variant copied into the main request. For a route
+with a parameter, a concrete key such as
+`GET /v1/payments/prices/stripe` can be paired with
+`"path": {"provider": "stripe"}`. Examples must use safe placeholders and
+must never contain real credentials, webhook signatures or customer data.
 
 ## API Errors
 

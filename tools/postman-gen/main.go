@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ type route struct {
 	Path        string
 	Handler     string
 	DisplayName string
+	Description string
 	Folder      string
 	Admin       bool
 	AuthMode    string
@@ -69,11 +71,12 @@ type postmanAuthKV struct {
 }
 
 type postmanRequest struct {
-	Method string          `json:"method"`
-	Auth   *postmanAuth    `json:"auth,omitempty"`
-	Header []postmanHeader `json:"header,omitempty"`
-	Body   *postmanBody    `json:"body,omitempty"`
-	URL    postmanURL      `json:"url"`
+	Method      string          `json:"method"`
+	Description string          `json:"description,omitempty"`
+	Auth        *postmanAuth    `json:"auth,omitempty"`
+	Header      []postmanHeader `json:"header,omitempty"`
+	Body        *postmanBody    `json:"body,omitempty"`
+	URL         postmanURL      `json:"url"`
 }
 
 type postmanHeader struct {
@@ -140,6 +143,7 @@ type manualExamplesFile struct {
 type manualExample struct {
 	Key      string                `json:"key"`
 	Name     string                `json:"name,omitempty"`
+	Default  bool                  `json:"default,omitempty"`
 	Request  manualExampleRequest  `json:"request,omitempty"`
 	Response manualExampleResponse `json:"response,omitempty"`
 }
@@ -373,7 +377,7 @@ func (g *generator) loadGoFiles(dir string) error {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		file, err := parser.ParseFile(g.fset, path, nil, 0)
+		file, err := parser.ParseFile(g.fset, path, nil, parser.ParseComments)
 		if err != nil {
 			return err
 		}
@@ -602,7 +606,7 @@ func (g *generator) collectRoutes() []route {
 				key := method + " " + keyPath + " " + handler
 				if !seen[key] {
 					seen[key] = true
-					out = append(out, route{Method: method, Path: fullPath, Handler: handler, DisplayName: displayName, Folder: folder, Admin: admin})
+					out = append(out, route{Method: method, Path: fullPath, Handler: handler, DisplayName: displayName, Description: g.handlerDescription(handler), Folder: folder, Admin: admin})
 				}
 			}
 		}
@@ -740,6 +744,10 @@ func withEnvironment(environment []string, key, value string) []string {
 }
 
 func collectRoutesFromPlugin(root, moduleName string) ([]route, error) {
+	descriptions, err := collectHandlerDescriptions(root)
+	if err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -778,6 +786,7 @@ func collectRoutesFromPlugin(root, moduleName string) ([]route, error) {
 					key := pluginRoute.Method + " " + pluginRoute.Path
 					if !seen[key] {
 						seen[key] = true
+						pluginRoute.Description = descriptions[pluginRoute.Handler]
 						routes = append(routes, pluginRoute)
 					}
 				}
@@ -787,6 +796,40 @@ func collectRoutesFromPlugin(root, moduleName string) ([]route, error) {
 	}
 	sortRoutes(routes)
 	return routes, nil
+}
+
+func collectHandlerDescriptions(root string) (map[string]string, error) {
+	descriptions := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if path != root && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "vendor") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ParseComments)
+		if err != nil {
+			return err
+		}
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Doc == nil {
+				continue
+			}
+			description := strings.TrimSpace(function.Doc.Text())
+			if description != "" {
+				descriptions[function.Name.Name] = description
+			}
+		}
+		return nil
+	})
+	return descriptions, err
 }
 
 func capturePluginGroup(assign *ast.AssignStmt, routesParameter string, groups map[string]pluginRouteGroup) {
@@ -1134,7 +1177,8 @@ func (g *generator) routeItem(r route) postmanItem {
 	rawURL := "{{" + baseVar + "}}" + r.Path + queryString(query)
 
 	req := &postmanRequest{
-		Method: r.Method,
+		Method:      r.Method,
+		Description: r.Description,
 		URL: postmanURL{
 			Raw:      rawURL,
 			Host:     []string{"{{" + baseVar + "}}"},
@@ -1238,7 +1282,12 @@ func (g *generator) manualExamplesForRoute(r route) []manualExample {
 		}
 		examples = append(examples, candidates...)
 	}
-	sort.SliceStable(examples, func(i, j int) bool { return examples[i].Name < examples[j].Name })
+	sort.SliceStable(examples, func(i, j int) bool {
+		if examples[i].Default != examples[j].Default {
+			return examples[i].Default
+		}
+		return examples[i].Name < examples[j].Name
+	})
 	return examples
 }
 
@@ -1317,6 +1366,14 @@ func (g *generator) handlerFunc(handlerName string) *ast.FuncDecl {
 		}
 	}
 	return nil
+}
+
+func (g *generator) handlerDescription(handlerName string) string {
+	fn := g.handlerFunc(handlerName)
+	if fn == nil || fn.Doc == nil {
+		return ""
+	}
+	return strings.TrimSpace(fn.Doc.Text())
 }
 
 func queryParamExample(key string) string {
