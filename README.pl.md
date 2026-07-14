@@ -164,13 +164,53 @@ Po wygenerowaniu trzeba ręcznie zarejestrować kontroler i routing w `main.go`,
 Kolekcję aplikacji wygenerujesz przez:
 
 ```bash
+procyon-cli postman generate
+```
+
+Wygenerowaną kolekcję można zsynchronizować ze wszystkimi targetami Postmana
+zdefiniowanymi w `.env` projektu:
+
+```bash
+procyon-cli postman sync
+```
+
+Skrypt kompatybilności uruchamia tę samą synchronizację (a gdy nie ma targetów,
+tylko generuje lokalny plik):
+
+```bash
 ./gen-postman.sh
 ```
 
-Generator skanuje routing aplikacji oraz wszystkie zainstalowane pluginy Go
-zapisane w `.procyon.json`. Trasy pluginów są odczytywane z ich metod
-`RegisterRoutes`, umieszczane w `Plugins/<nazwa pluginu>` i zachowują właściwy
-tryb dostępu: publiczny, bearer albo admin.
+Jeden klucz API może obsłużyć dowolną liczbę kolekcji, a wybrany target może
+mieć własny klucz:
+
+```dotenv
+POSTMAN_API_KEY=shared_postman_api_key
+POSTMAN_COLLECTION_ID=primary_collection_id
+POSTMAN_TARGET_NAME=Primary
+
+POSTMAN_COLLECTION_ID_1=staging_collection_id
+POSTMAN_TARGET_NAME_1=Staging
+
+POSTMAN_API_KEY_8=separate_account_api_key
+POSTMAN_COLLECTION_ID_8=production_collection_id
+POSTMAN_TARGET_NAME_8=Production
+```
+
+CLI wykrywa każdy dodatni sufiks liczbowy, więc nie ma limitu dwóch ani ośmiu
+targetów, a indeksy mogą mieć przerwy. Target numerowany korzysta ze wspólnego
+`POSTMAN_API_KEY`, chyba że ma własny `POSTMAN_API_KEY_N`. Stara nazwa
+`POSTMAN_API_COLLECTION_ID_N` nadal działa jako alias
+`POSTMAN_COLLECTION_ID_N`. Niepełny target przerywa synchronizację z czytelnym
+błędem. Zmienne procesu mają pierwszeństwo przed `.env`, flagi przed obiema
+warstwami, a klucze API nie są wypisywane.
+
+Generator jest wersjonowany razem z `procyon-cli`, dzięki czemu starsze projekty
+dostają jego poprawki po aktualizacji CLI, bez kopiowania katalogu
+`tools/postman-gen`. Skanuje routing aplikacji oraz wszystkie zainstalowane
+pluginy Go zapisane w `.procyon.json`. Trasy pluginów są odczytywane z ich metod
+`RegisterRoutes`, umieszczane w głównym folderze nazwanym jak plugin i zachowują
+właściwy tryb dostępu: publiczny, bearer albo admin.
 
 ## Błędy API
 

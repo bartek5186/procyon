@@ -164,10 +164,48 @@ After generation, manually register the controller and routes in `main.go`, then
 Generate the application collection with:
 
 ```bash
+procyon-cli postman generate
+```
+
+Synchronize the generated collection with all Postman targets configured in
+the project `.env`:
+
+```bash
+procyon-cli postman sync
+```
+
+The compatibility script runs this synchronization command (and still only
+generates locally when no remote targets are configured):
+
+```bash
 ./gen-postman.sh
 ```
 
-The generator scans application routes and all installed Go plugins recorded in
+Use one shared API key for any number of collections, or override it per target:
+
+```dotenv
+POSTMAN_API_KEY=shared_postman_api_key
+POSTMAN_COLLECTION_ID=primary_collection_id
+POSTMAN_TARGET_NAME=Primary
+
+POSTMAN_COLLECTION_ID_1=staging_collection_id
+POSTMAN_TARGET_NAME_1=Staging
+
+POSTMAN_API_KEY_8=separate_account_api_key
+POSTMAN_COLLECTION_ID_8=production_collection_id
+POSTMAN_TARGET_NAME_8=Production
+```
+
+The CLI discovers every positive numeric suffix, so there is no two-target (or
+eight-target) limit and indexes may have gaps. A numbered target falls back to
+the shared `POSTMAN_API_KEY`. `POSTMAN_API_COLLECTION_ID_N` is supported as a
+legacy alias for `POSTMAN_COLLECTION_ID_N`. Incomplete targets stop the sync
+with a clear error rather than being skipped. Process variables override `.env`
+and explicit command flags override both; API keys are never logged.
+
+The generator is versioned with `procyon-cli`, so existing projects receive
+generator fixes by updating the CLI instead of copying a new `tools/postman-gen`
+directory. It scans application routes and all installed Go plugins recorded in
 `.procyon.json`. Plugin routes are read from their `RegisterRoutes` methods and
 placed in a top-level folder named after the plugin, preserving public,
 bearer-authenticated and admin access modes.
