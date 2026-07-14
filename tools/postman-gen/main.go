@@ -533,61 +533,81 @@ func (g *generator) collectRoutes() []route {
 		}
 		env := cloneMap(prefixes)
 
-		for _, stmt := range fn.Body.List {
-			if assign, ok := stmt.(*ast.AssignStmt); ok {
-				g.captureGroup(assign, env)
-			}
-
-			call := callFromStmt(stmt)
-			if call == nil {
-				continue
-			}
-			if fnName := calledFuncName(call.Fun); strings.HasPrefix(fnName, "register") {
-				if len(call.Args) > 0 {
-					if id, ok := call.Args[0].(*ast.Ident); ok {
-						next := map[string]string{}
-						if paramName := firstParamName(funcs[fnName]); paramName != "" {
-							next[paramName] = env[id.Name]
-						}
-						walkFunc(fnName, next, admin)
+		var walkStatements func([]ast.Stmt, map[string]string)
+		walkStatements = func(statements []ast.Stmt, env map[string]string) {
+			for _, stmt := range statements {
+				if conditional, ok := stmt.(*ast.IfStmt); ok {
+					ifEnv := cloneMap(env)
+					if assign, ok := conditional.Init.(*ast.AssignStmt); ok {
+						g.captureGroup(assign, ifEnv)
 					}
+					walkStatements(conditional.Body.List, ifEnv)
+					switch alternative := conditional.Else.(type) {
+					case *ast.BlockStmt:
+						walkStatements(alternative.List, cloneMap(env))
+					case *ast.IfStmt:
+						walkStatements([]ast.Stmt{alternative}, cloneMap(env))
+					}
+					continue
 				}
-				continue
-			}
 
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || len(call.Args) < 2 {
-				continue
-			}
-			method := strings.ToUpper(selector.Sel.Name)
-			if !isHTTPRegistration(method) {
-				continue
-			}
-			recv, ok := selector.X.(*ast.Ident)
-			if !ok {
-				continue
-			}
-			path, ok := stringLiteral(call.Args[0])
-			if !ok {
-				continue
-			}
-			if method == "ANY" {
-				method = "POST"
-			}
-			fullPath := cleanPath(env[recv.Name] + path)
-			handler := handlerName(call.Args[1])
-			displayName := routeDisplayName(handler, g.routeCommentValue(stmt, "name"))
-			folder := g.routeCommentValue(stmt, "folder")
-			keyPath := fullPath
-			if admin {
-				keyPath = adminCanonicalPath(fullPath)
-			}
-			key := method + " " + keyPath + " " + handler
-			if !seen[key] {
-				seen[key] = true
-				out = append(out, route{Method: method, Path: fullPath, Handler: handler, DisplayName: displayName, Folder: folder, Admin: admin})
+				if assign, ok := stmt.(*ast.AssignStmt); ok {
+					g.captureGroup(assign, env)
+				}
+
+				call := callFromStmt(stmt)
+				if call == nil {
+					continue
+				}
+				if fnName := calledFuncName(call.Fun); strings.HasPrefix(fnName, "register") {
+					if len(call.Args) > 0 {
+						if id, ok := call.Args[0].(*ast.Ident); ok {
+							next := map[string]string{}
+							if paramName := firstParamName(funcs[fnName]); paramName != "" {
+								next[paramName] = env[id.Name]
+							}
+							walkFunc(fnName, next, admin)
+						}
+					}
+					continue
+				}
+
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || len(call.Args) < 2 {
+					continue
+				}
+				method := strings.ToUpper(selector.Sel.Name)
+				if !isHTTPRegistration(method) {
+					continue
+				}
+				recv, ok := selector.X.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				path, ok := stringLiteral(call.Args[0])
+				if !ok {
+					continue
+				}
+				if method == "ANY" {
+					method = "POST"
+				}
+				fullPath := cleanPath(env[recv.Name] + path)
+				handler := handlerName(call.Args[1])
+				displayName := routeDisplayName(handler, g.routeCommentValue(stmt, "name"), fullPath)
+				folder := g.routeCommentValue(stmt, "folder")
+				keyPath := fullPath
+				if admin {
+					keyPath = adminCanonicalPath(fullPath)
+				}
+				key := method + " " + keyPath + " " + handler
+				if !seen[key] {
+					seen[key] = true
+					out = append(out, route{Method: method, Path: fullPath, Handler: handler, DisplayName: displayName, Folder: folder, Admin: admin})
+				}
 			}
 		}
+
+		walkStatements(fn.Body.List, env)
 	}
 
 	walkFunc("registerPublicRoutes", map[string]string{"e": ""}, false)
@@ -817,11 +837,12 @@ func pluginRouteFromCall(call *ast.CallExpr, routesParameter string, groups map[
 	if method == "ANY" {
 		method = "POST"
 	}
+	fullPath := cleanPath(group.Path + path)
 	handler := handlerName(call.Args[1])
 	return route{
-		Method: method, Path: cleanPath(group.Path + path), Handler: handler,
-		DisplayName: routeDisplayName(handler, ""),
-		Folder:      "Plugins/" + titleForSegment(moduleName),
+		Method: method, Path: fullPath, Handler: handler,
+		DisplayName: routeDisplayName(handler, "", fullPath),
+		Folder:      titleForSegment(moduleName),
 		Admin:       group.AuthMode == routeAuthAdmin,
 		AuthMode:    group.AuthMode,
 	}, true
@@ -942,15 +963,8 @@ func modulePath(r route) []string {
 	}
 
 	path := cleanPath(r.Path)
-	parts := pathParts(path)
 	if r.Admin || isAdminRoute(path) {
-		if strings.HasPrefix(path, "/admin/") && len(parts) > 1 {
-			return []string{"Admin", titleForSegment(parts[1])}
-		}
-		if len(parts) > 0 {
-			return []string{"Admin", titleForSegment(parts[0])}
-		}
-		return []string{"Admin", "General"}
+		return []string{"Admin"}
 	}
 	if strings.HasPrefix(path, "/payment") {
 		return []string{"Payment"}
@@ -2035,14 +2049,20 @@ func handlerName(expr ast.Expr) string {
 	switch x := expr.(type) {
 	case *ast.SelectorExpr:
 		return x.Sel.Name
+	case *ast.Ident:
+		return x.Name
+	case *ast.FuncLit:
+		return ""
 	case *ast.CallExpr:
-		return handlerName(x.Fun)
+		// Calls are adapters or factories, not stable endpoint names. Falling
+		// back to the route path avoids leaking names such as WrapHandler.
+		return ""
 	default:
-		return exprString(expr)
+		return ""
 	}
 }
 
-func routeDisplayName(handler, override string) string {
+func routeDisplayName(handler, override, path string) string {
 	override = strings.TrimSpace(override)
 	if override != "" {
 		return override
@@ -2051,7 +2071,22 @@ func routeDisplayName(handler, override string) string {
 	if handler != "" {
 		return handler
 	}
+	if name := routePathDisplayName(path); name != "" {
+		return name
+	}
 	return "Request"
+}
+
+func routePathDisplayName(path string) string {
+	parts := pathParts(cleanPath(path))
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := strings.TrimSpace(parts[i])
+		if part == "" || strings.HasPrefix(part, ":") || strings.HasPrefix(part, "{") {
+			continue
+		}
+		return titleForSegment(part)
+	}
+	return ""
 }
 
 func (g *generator) routeCommentValue(stmt ast.Stmt, key string) string {

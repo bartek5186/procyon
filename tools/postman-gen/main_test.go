@@ -1,6 +1,9 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,9 +51,13 @@ func (*Plugin) RegisterRoutes(routes Routes) {
 	assertPluginRoute(t, routes, "POST", "/v1/payments/checkout", routeAuthBearer, false)
 	assertPluginRoute(t, routes, "DELETE", "/v1/admin/payments/:id", routeAuthAdmin, true)
 	for _, item := range routes {
-		if item.Folder != "Plugins/Payment System" {
+		if item.Folder != "Payment System" {
 			t.Fatalf("unexpected folder %q", item.Folder)
 		}
+	}
+	collection := generator.collection("Test API", routes, collectionVars{})
+	if len(collection.Item) != 1 || collection.Item[0].Name != "Payment System" {
+		t.Fatalf("plugin collection root = %+v, want Payment System", collection.Item)
 	}
 }
 
@@ -104,12 +111,115 @@ func TestCollectPluginRoutesSkipsDisabledPlugin(t *testing.T) {
 	}
 }
 
+func TestAdminRoutesArePlacedDirectlyInAdminFolder(t *testing.T) {
+	for _, item := range []route{
+		{Path: "/metrics", Admin: true},
+		{Path: "/admin/ping"},
+	} {
+		path := modulePath(item)
+		if len(path) != 1 || path[0] != "Admin" {
+			t.Fatalf("modulePath(%q) = %#v, want [Admin]", item.Path, path)
+		}
+	}
+}
+
+func TestRouteDisplayNameUsesPathWhenHandlerHasNoStableName(t *testing.T) {
+	tests := []struct {
+		handler string
+		path    string
+		want    string
+	}{
+		{handler: "", path: "/metrics", want: "Metrics"},
+		{handler: "", path: "/ping", want: "Ping"},
+		{handler: "UpdateCarrier", path: "/carriers/:uuid", want: "UpdateCarrier"},
+	}
+	for _, tt := range tests {
+		if got := routeDisplayName(tt.handler, "", tt.path); got != tt.want {
+			t.Fatalf("routeDisplayName(%q, %q) = %q, want %q", tt.handler, tt.path, got, tt.want)
+		}
+	}
+
+	if got := routeDisplayName("WrapHandler", "PrometheusMetrics", "/metrics"); got != "PrometheusMetrics" {
+		t.Fatalf("explicit route name was not preserved: %q", got)
+	}
+}
+
+func TestHandlerNameIgnoresAdaptersAndAnonymousFunctions(t *testing.T) {
+	expr, err := parser.ParseExpr("echo.WrapHandler(app.obs.MetricsHandler())")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := handlerName(expr); got != "" {
+		t.Fatalf("wrapped handler name = %q, want empty", got)
+	}
+
+	file, err := parser.ParseFile(token.NewFileSet(), "routes.go", `package routes
+func register() { admin.GET("/ping", func(c Context) error { return nil }) }
+`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := file.Decls[0].(*ast.FuncDecl).Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr)
+	if got := handlerName(call.Args[1]); got != "" {
+		t.Fatalf("anonymous handler name = %q, want empty", got)
+	}
+}
+
+func TestCollectRoutesIncludesConditionalRegistrations(t *testing.T) {
+	project := t.TempDir()
+	writePostmanTestFile(t, filepath.Join(project, "routes.go"), `package main
+func registerPublicRoutes(e *Echo, app *application) {
+	api := e.Group("/v1")
+	if app.auth != nil {
+		api.GET("/profile", app.profile.Get)
+	}
+}
+func registerAdminRoutes(e *Echo, app *application) {
+	if app.adminAuth != nil {
+		admin := e.Group("", app.adminAuth.RequireAdminKey)
+		admin.GET("/ping", func(c Context) error { return nil })
+	}
+}
+func registerUploadRoutes(e *Echo, app *application) {}
+`)
+
+	generator := &generator{
+		root:        project,
+		fset:        token.NewFileSet(),
+		structs:     map[string]*ast.StructType{},
+		handlerBody: map[string]any{},
+		funcReturns: map[string][]ast.Expr{},
+	}
+	if err := generator.load(); err != nil {
+		t.Fatal(err)
+	}
+	routes := generator.collectRoutes()
+	if len(routes) != 2 {
+		t.Fatalf("routes = %d, want 2: %+v", len(routes), routes)
+	}
+	assertGeneratedRoute(t, routes, "GET", "/v1/profile", "Get")
+	assertGeneratedRoute(t, routes, "GET", "/ping", "Ping")
+}
+
 func assertPluginRoute(t *testing.T, routes []route, method, path, authMode string, admin bool) {
 	t.Helper()
 	for _, item := range routes {
 		if item.Method == method && item.Path == path {
 			if item.AuthMode != authMode || item.Admin != admin {
 				t.Fatalf("unexpected route metadata: %+v", item)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing route %s %s in %+v", method, path, routes)
+}
+
+func assertGeneratedRoute(t *testing.T, routes []route, method, path, displayName string) {
+	t.Helper()
+	for _, item := range routes {
+		if item.Method == method && item.Path == path {
+			if item.DisplayName != displayName {
+				t.Fatalf("route %s %s display name = %q, want %q", method, path, item.DisplayName, displayName)
 			}
 			return
 		}

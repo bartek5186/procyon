@@ -56,71 +56,61 @@
       "item": [
         {
           "name": "Metrics",
-          "item": [
-            {
-              "name": "WrapHandler",
-              "request": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{adminURL}}/metrics",
-                  "host": [
-                    "{{adminURL}}"
-                  ],
-                  "path": [
-                    "metrics"
-                  ]
-                }
-              },
-              "response": [
-                {
-                  "name": "200 OK - example",
-                  "status": "OK",
-                  "code": 200,
-                  "header": [
-                    {
-                      "key": "Content-Type",
-                      "value": "application/json",
-                      "type": "text"
-                    }
-                  ],
-                  "body": "{\n  \"status\": \"ok\"\n}"
-                }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{adminURL}}/metrics",
+              "host": [
+                "{{adminURL}}"
+              ],
+              "path": [
+                "metrics"
               ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
             }
           ]
         },
         {
           "name": "Ping",
-          "item": [
-            {
-              "name": "*ast.FuncLit",
-              "request": {
-                "method": "GET",
-                "url": {
-                  "raw": "{{adminURL}}/ping",
-                  "host": [
-                    "{{adminURL}}"
-                  ],
-                  "path": [
-                    "ping"
-                  ]
-                }
-              },
-              "response": [
-                {
-                  "name": "200 OK - example",
-                  "status": "OK",
-                  "code": 200,
-                  "header": [
-                    {
-                      "key": "Content-Type",
-                      "value": "application/json",
-                      "type": "text"
-                    }
-                  ],
-                  "body": "{\n  \"status\": \"ok\"\n}"
-                }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{adminURL}}/ping",
+              "host": [
+                "{{adminURL}}"
+              ],
+              "path": [
+                "ping"
               ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - example",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "type": "text"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
             }
           ]
         }
