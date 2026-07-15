@@ -55,17 +55,43 @@ Punkt startowy dla nowego serwisu:
 - `config/config.example.json` dla MySQL
 - `config/config.postgres.example.json` dla PostgreSQL
 
-## Aktualizacja Frameworka
+## Aktualizacje Procyon
+
+Samo CLI można zaktualizować z dowolnego katalogu:
+
+```bash
+procyon-cli self-update
+```
 
 Wspólna infrastruktura pochodzi z wersjonowanego modułu Go `procyon-core`.
 W katalogu aplikacji uruchom:
 
 ```bash
-procyon-cli update
+procyon-cli core update
 ```
 
-Polecenie aktualizuje zależność oraz uruchamia `go mod tidy` i `go test ./...`.
+Polecenie Core aktualizuje zależność oraz uruchamia `go mod tidy` i
+`go test ./...`.
 Routing, kod domenowy, polityki i migracje aplikacji nie są nadpisywane.
+Stare `procyon-cli update` pozostaje przestarzałym aliasem wyłącznie dla
+aktualizacji Core.
+
+## Typowane zdarzenia modułów
+
+Aplikacja tworzy jeden typowany event bus i przekazuje go wszystkim
+zainstalowanym pluginom. Pluginy rejestrują handlery podczas inicjalizacji, a
+handlery należące do aplikacji są składane w `events.go`. Rejestracja zostaje
+zamknięta przed uruchomieniem tras pluginów i zadań działających w tle.
+
+Bus jest synchroniczny i celowo nie ma kolejki ani workera. Handlery muszą być
+szybkie i idempotentne. Błąd handlera przerywa publikację, dzięki czemu trwałe
+źródło, takie jak webhook płatności, może ponowić całe zdarzenie.
+
+Projekty wygenerowane przed dodaniem eventów wymagają jednorazowej zmiany w
+`app.go` i `plugins.go`: utworzenia busa, przekazania go jako
+`plugins.Dependencies.Events`, zarejestrowania handlerów aplikacji oraz wywołania
+`Seal` przed `registerPublicRoutes`. Dokładny lifecycle opisuje
+[dokumentacja Core](https://github.com/bartek5186/procyon-core/tree/main/events).
 
 ## Inicjalizacja Projektu
 

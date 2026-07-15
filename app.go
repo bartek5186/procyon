@@ -13,6 +13,7 @@ import (
 	"github.com/bartek5186/procyon-core/apierr"
 	"github.com/bartek5186/procyon-core/authz"
 	coreconfig "github.com/bartek5186/procyon-core/config"
+	coreevents "github.com/bartek5186/procyon-core/events"
 	"github.com/bartek5186/procyon-core/logging"
 	mid "github.com/bartek5186/procyon-core/middleware"
 	coreplugins "github.com/bartek5186/procyon-core/plugins"
@@ -60,6 +61,7 @@ func run() error {
 		zap.String("env", obsConfig.Environment),
 		zap.String("version", obsConfig.ServiceVersion),
 	)
+	eventBus := coreevents.New()
 
 	db, err := coreconfig.Connect(config)
 	if err != nil {
@@ -69,7 +71,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize telemetry: %w", err)
 	}
-	installedPlugins, err := loadInstalledPlugins(context.Background(), db, logger.GetLogger(), config)
+	installedPlugins, err := loadInstalledPlugins(context.Background(), db, logger.GetLogger(), eventBus, config)
 	if err != nil {
 		return err
 	}
@@ -85,7 +87,10 @@ func run() error {
 
 	appStore := store.NewAppStore(db, &config)
 	appService := services.NewAppService(appStore, logger.GetLogger(), obs.BusinessMetrics())
-	_ = appService
+	if err := registerApplicationEventHandlers(eventBus, appService); err != nil {
+		return fmt.Errorf("register application event handlers: %w", err)
+	}
+	eventBus.Seal()
 
 	var kratosAuth *mid.KratosAuth
 	if config.AuthEnabled() {

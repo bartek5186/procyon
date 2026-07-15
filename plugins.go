@@ -6,13 +6,17 @@ import (
 
 	"github.com/bartek5186/procyon-core/authz"
 	coreconfig "github.com/bartek5186/procyon-core/config"
+	coreevents "github.com/bartek5186/procyon-core/events"
 	coreplugins "github.com/bartek5186/procyon-core/plugins"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
-func loadInstalledPlugins(ctx context.Context, db *gorm.DB, logger *zap.Logger, config coreconfig.Config) ([]coreplugins.Plugin, error) {
-	registrations := installedPluginFactories()
+func loadInstalledPlugins(ctx context.Context, db *gorm.DB, logger *zap.Logger, eventBus *coreevents.Bus, config coreconfig.Config) ([]coreplugins.Plugin, error) {
+	return instantiatePlugins(ctx, installedPluginFactories(), db, logger, eventBus, config)
+}
+
+func instantiatePlugins(ctx context.Context, registrations []coreplugins.Registration, db *gorm.DB, logger *zap.Logger, eventBus *coreevents.Bus, config coreconfig.Config) ([]coreplugins.Plugin, error) {
 	instances := make([]coreplugins.Plugin, 0, len(registrations))
 	for _, registration := range registrations {
 		if registration.Factory == nil {
@@ -22,7 +26,7 @@ func loadInstalledPlugins(ctx context.Context, db *gorm.DB, logger *zap.Logger, 
 		if len(pluginConfig) == 0 {
 			pluginConfig = registration.DefaultConfig
 		}
-		instance, err := registration.Factory(ctx, coreplugins.Dependencies{DB: db, Logger: logger}, pluginConfig)
+		instance, err := registration.Factory(ctx, coreplugins.Dependencies{DB: db, Logger: logger, Events: eventBus}, pluginConfig)
 		if err != nil {
 			return nil, fmt.Errorf("initialize plugin %s: %w", registration.Name, err)
 		}
