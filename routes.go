@@ -8,7 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func registerPublicRoutes(e *echo.Echo, app *application) {
+func registerPublicRoutes(e *echo.Echo, app *application) error {
 	e.Static("/", "static")
 
 	e.GET("/healthz", app.obs.HealthHandler)
@@ -37,11 +37,10 @@ func registerPublicRoutes(e *echo.Echo, app *application) {
 			pluginAdmin = pluginAuthenticated.Group("/admin", app.requirePermission("*", "plugin_admin", "manage"))
 		}
 	}
-	for _, plugin := range app.plugins {
-		plugin.RegisterRoutes(coreplugins.Routes{
-			Public: pluginPublic, Authenticated: pluginAuthenticated, Admin: pluginAdmin, Require: app.requirePermission,
-		})
-	}
+	return app.plugins.RegisterRoutes(coreplugins.Routes{
+		Public: pluginPublic, Authenticated: pluginAuthenticated, Admin: pluginAdmin, Require: app.requirePermission,
+		Servers: []*echo.Echo{e},
+	})
 }
 
 func registerAdminRoutes(e *echo.Echo, app *application) {

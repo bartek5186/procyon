@@ -14,6 +14,9 @@ config/
 controllers/
 internal/
 models/
+plugins/
+plugins_local.go
+plugins_gen.go
 policies.go
 services/
 static/
@@ -78,8 +81,8 @@ aktualizacji Core.
 
 ## Typowane zdarzenia modułów
 
-Aplikacja tworzy jeden typowany event bus i przekazuje go wszystkim
-zainstalowanym pluginom. Pluginy rejestrują handlery podczas inicjalizacji, a
+Aplikacja tworzy jeden typowany event bus i przekazuje go wszystkim pluginom
+projektowym i zainstalowanym. Pluginy rejestrują handlery przez `RegisterEvents`, a
 handlery należące do aplikacji są składane w `events.go`. Rejestracja zostaje
 zamknięta przed uruchomieniem tras pluginów i zadań działających w tle.
 
@@ -92,6 +95,29 @@ Projekty wygenerowane przed dodaniem eventów wymagają jednorazowej zmiany w
 `plugins.Dependencies.Events`, zarejestrowania handlerów aplikacji oraz wywołania
 `Seal` przed `registerPublicRoutes`. Dokładny lifecycle opisuje
 [dokumentacja Core](https://github.com/bartek5186/procyon-core/tree/main/events).
+
+## Pluginy Wewnętrzne Projektu
+
+Prywatny plugin kompilowany razem z bieżącą aplikacją utworzysz przez:
+
+```bash
+procyon-cli plugin create leagues
+```
+
+Polecenie tworzy `plugins/leagues/` bez osobnego `go.mod` i manifestu modułu
+publicznego oraz dopisuje fabrykę w `plugins_local.go`. Zewnętrzne pluginy nadal
+są generowane w `plugins_gen.go`. Obie listy przechodzą przez jeden registry i
+ten sam lifecycle konfiguracji, migracji, capabilities, eventów, polityk, tras,
+workerów i shutdownu w odwrotnej kolejności.
+
+Plugin deklaruje zależności przez `Requires`. Start odrzuca brakujące zależności,
+cykle, powtórzone nazwy i nadpisanie istniejącej trasy. Synchroniczne porty są
+udostępniane przez `plugins.Provide` i pobierane przez `plugins.Resolve`, a fakty,
+które już wystąpiły, powinny korzystać z typowanego event busa.
+
+Wpis `plugins.<nazwa>.enabled=false` w wybranym configu pomija zarejestrowany
+plugin. Pluginy projektowe nie trafiają do `.procyon.json`, publicznego katalogu
+modułów ani do `go.mod`.
 
 ## Inicjalizacja Projektu
 
@@ -233,8 +259,9 @@ warstwami, a klucze API nie są wypisywane.
 
 Generator jest wersjonowany razem z `procyon-cli`, dzięki czemu starsze projekty
 dostają jego poprawki po aktualizacji CLI, bez kopiowania katalogu
-`tools/postman-gen`. Skanuje routing aplikacji oraz wszystkie zainstalowane
-pluginy Go zapisane w `.procyon.json`. Trasy pluginów są odczytywane z ich metod
+`tools/postman-gen`. Skanuje routing aplikacji, pluginy projektowe w `plugins/`
+oraz wszystkie zainstalowane pluginy Go zapisane w `.procyon.json`. Trasy
+pluginów są odczytywane z ich metod
 `RegisterRoutes`, umieszczane w głównym folderze nazwanym jak plugin i zachowują
 właściwy tryb dostępu: publiczny, bearer albo admin.
 

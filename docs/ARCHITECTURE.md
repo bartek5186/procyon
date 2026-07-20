@@ -36,6 +36,9 @@ controllers/   handlery Echo i mapowanie HTTP <-> service
 internal/      prywatne i18n, migracje i helpery aplikacji
 policies.go    polityki RBAC należące do aplikacji
 models/        encje GORM, input/output DTO, mapery
+plugins/       prywatne bounded contexty kompilowane razem z aplikacją
+plugins_local.go  rejestracja pluginów należących do projektu
+plugins_gen.go    generowana rejestracja pluginów instalowanych przez CLI
 services/      use-case, logika biznesowa, integracje zewnętrzne, cron/background jobs
 store/         dostęp do danych przez GORM
 static/        statyczne pliki HTTP
@@ -52,17 +55,23 @@ Przy starcie aplikacja robi w tej kolejności:
 2. nakłada override'y z env i waliduje konfigurację,
 3. tworzy logger,
 4. otwiera połączenie z DB i ustawia pool,
-5. inicjalizuje opcjonalne moduły, np. Casbin tylko gdy `rbac.enabled=true`,
-6. uruchamia migracje, jeśli proces dostał `-migrate=true`,
-7. buduje `AppStore`,
-8. inicjalizuje providerów płatności, jeśli są włączone,
-9. buduje `AppService`,
-10. uruchamia background jobs i consumerów,
-11. tworzy kontrolery,
-12. zakłada middleware,
-13. rejestruje trasy zależnie od przełączników modułów.
+5. scala fabryki z `plugins_local.go` i `plugins_gen.go`, tworzy pluginy oraz sortuje ich zależności,
+6. uruchamia migracje aplikacji i pluginów, jeśli proces dostał `-migrate=true`,
+7. rejestruje capabilities i event handlers pluginów,
+8. buduje `AppStore` i `AppService` oraz rejestruje event handlers aplikacji,
+9. inicjalizuje opcjonalne auth, RBAC i admin endpoints,
+10. zbiera polityki aplikacji i pluginów,
+11. tworzy kontrolery i zakłada middleware,
+12. rejestruje trasy aplikacji i pluginów oraz odrzuca kolizje,
+13. uruchamia workery pluginów przez `Start`, a następnie serwery HTTP.
 
 W tym projekcie nie ma kontenera DI. Zależności są przekazywane ręcznie przez konstruktory albo przypisywane podczas tworzenia `AppService`.
+
+Pluginy w `plugins/` nie mają własnego `go.mod` i nie są publikowane. Korzystają
+z tego samego kontraktu Core co pluginy zewnętrzne. Zależności deklarują przez
+`Requires`, synchroniczne porty udostępniają jako capabilities, a fakty domenowe
+przekazują przez typowany event bus. Plugin nie powinien otrzymywać globalnego
+`AppService` ani `Datastore`.
 
 ## 4. Rola warstw
 

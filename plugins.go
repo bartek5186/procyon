@@ -2,63 +2,26 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 
-	"github.com/bartek5186/procyon-core/authz"
 	coreconfig "github.com/bartek5186/procyon-core/config"
-	coreevents "github.com/bartek5186/procyon-core/events"
 	coreplugins "github.com/bartek5186/procyon-core/plugins"
-	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
-func loadInstalledPlugins(ctx context.Context, db *gorm.DB, logger *zap.Logger, eventBus *coreevents.Bus, config coreconfig.Config) ([]coreplugins.Plugin, error) {
-	return instantiatePlugins(ctx, installedPluginFactories(), db, logger, eventBus, config)
+func pluginRegistrations() []coreplugins.Registration {
+	registrations := append([]coreplugins.Registration(nil), localPluginFactories()...)
+	return append(registrations, installedPluginFactories()...)
 }
 
-func instantiatePlugins(ctx context.Context, registrations []coreplugins.Registration, db *gorm.DB, logger *zap.Logger, eventBus *coreevents.Bus, config coreconfig.Config) ([]coreplugins.Plugin, error) {
-	instances := make([]coreplugins.Plugin, 0, len(registrations))
-	for _, registration := range registrations {
-		if registration.Factory == nil {
-			return nil, fmt.Errorf("plugin %q has no factory", registration.Name)
-		}
-		pluginConfig := config.PluginConfig(registration.Name)
-		if len(pluginConfig) == 0 {
-			pluginConfig = registration.DefaultConfig
-		}
-		instance, err := registration.Factory(ctx, coreplugins.Dependencies{DB: db, Logger: logger, Events: eventBus}, pluginConfig)
-		if err != nil {
-			return nil, fmt.Errorf("initialize plugin %s: %w", registration.Name, err)
-		}
-		if instance == nil {
-			return nil, fmt.Errorf("plugin %s returned a nil instance", registration.Name)
-		}
-		instances = append(instances, instance)
+func loadPlugins(ctx context.Context, dependencies coreplugins.Dependencies, config coreconfig.Config) (*coreplugins.Registry, error) {
+	registry, err := coreplugins.NewRegistry(pluginRegistrations())
+	if err != nil {
+		return nil, err
 	}
-	return instances, nil
-}
-
-func installedPluginPolicies(instances []coreplugins.Plugin) []authz.Policy {
-	var policies []authz.Policy
-	for _, instance := range instances {
-		policies = append(policies, instance.Policies()...)
+	if err := registry.Instantiate(ctx, dependencies, func(registration coreplugins.Registration) json.RawMessage {
+		return config.PluginConfig(registration.Name)
+	}); err != nil {
+		return nil, err
 	}
-	return policies
-}
-
-func migrateInstalledPlugins(ctx context.Context, instances []coreplugins.Plugin) error {
-	for _, instance := range instances {
-		if err := instance.Migrate(ctx); err != nil {
-			return fmt.Errorf("migrate plugin %s: %w", instance.Name(), err)
-		}
-	}
-	return nil
-}
-
-func shutdownInstalledPlugins(ctx context.Context, instances []coreplugins.Plugin, logger *zap.Logger) {
-	for index := len(instances) - 1; index >= 0; index-- {
-		if err := instances[index].Shutdown(ctx); err != nil {
-			logger.Error("plugin shutdown failed", zap.String("plugin", instances[index].Name()), zap.Error(err))
-		}
-	}
+	return registry, nil
 }

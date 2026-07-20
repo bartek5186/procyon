@@ -14,6 +14,9 @@ config/
 controllers/
 internal/
 models/
+plugins/
+plugins_local.go
+plugins_gen.go
 policies.go
 services/
 static/
@@ -78,8 +81,9 @@ update only.
 
 ## Typed Module Events
 
-The application creates one typed event bus and shares it with every installed
-plugin. Plugins register handlers during construction; application-owned
+The application creates one typed event bus and shares it with every local and
+installed plugin. Plugins register handlers through `RegisterEvents`;
+application-owned
 handlers belong in `events.go`. Registration is sealed before plugin routes and
 background tasks start.
 
@@ -93,6 +97,29 @@ Projects generated before typed events need a one-time wiring update in
 before `registerPublicRoutes`. See the
 [Core event guide](https://github.com/bartek5186/procyon-core/tree/main/events)
 for the exact lifecycle.
+
+## Project-owned Plugins
+
+Create a private plugin compiled as part of the current application:
+
+```bash
+procyon-cli plugin create leagues
+```
+
+The command creates `plugins/leagues/` without a nested `go.mod` or public
+module manifest and wires its factory into `plugins_local.go`. Installed shared
+plugins remain generated in `plugins_gen.go`. Both lists are composed into one
+registry and use the same configuration, migrations, capabilities, events,
+policies, routes, workers and reverse-order shutdown lifecycle.
+
+Plugins can declare dependencies with `Requires`. Startup rejects missing
+dependencies, cycles, duplicate names and route overwrites. A plugin can expose
+synchronous typed ports with `plugins.Provide` and consume them with
+`plugins.Resolve`; facts that already happened should use the typed event bus.
+
+Set `plugins.<name>.enabled=false` in the selected application config to omit a
+registered plugin. Project-owned plugins are never added to `.procyon.json`,
+the public module registry or `go.mod`.
 
 ## Project Init
 
@@ -232,8 +259,9 @@ and explicit command flags override both; API keys are never logged.
 
 The generator is versioned with `procyon-cli`, so existing projects receive
 generator fixes by updating the CLI instead of copying a new `tools/postman-gen`
-directory. It scans application routes and all installed Go plugins recorded in
-`.procyon.json`. Plugin routes are read from their `RegisterRoutes` methods and
+directory. It scans application routes, project-owned plugins under `plugins/`,
+and installed Go plugins recorded in `.procyon.json`. Plugin routes are read
+from their `RegisterRoutes` methods and
 placed in a top-level folder named after the plugin, preserving public,
 bearer-authenticated and admin access modes.
 

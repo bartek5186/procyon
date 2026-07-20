@@ -24,7 +24,7 @@ func (*lifecycleTestPlugin) Policies() []authz.Policy          { return nil }
 func (*lifecycleTestPlugin) RegisterRoutes(coreplugins.Routes) {}
 func (*lifecycleTestPlugin) Shutdown(context.Context) error    { return nil }
 
-func TestInstalledPluginsShareOneApplicationEventBus(t *testing.T) {
+func TestLocalAndInstalledPluginsShareOneApplicationEventBus(t *testing.T) {
 	eventBus := coreevents.New()
 	received := ""
 	var publisherBus *coreevents.Bus
@@ -43,11 +43,17 @@ func TestInstalledPluginsShareOneApplicationEventBus(t *testing.T) {
 			return &lifecycleTestPlugin{name: "publisher"}, nil
 		}},
 	}
-	instances, err := instantiatePlugins(context.Background(), registrations, nil, nil, eventBus, coreconfig.Config{})
+	registry, err := coreplugins.NewRegistry(registrations)
+	if err != nil {
+		t.Fatalf("new registry: %v", err)
+	}
+	err = registry.Instantiate(context.Background(), coreplugins.Dependencies{Events: eventBus}, func(registration coreplugins.Registration) json.RawMessage {
+		return coreconfig.Config{}.PluginConfig(registration.Name)
+	})
 	if err != nil {
 		t.Fatalf("instantiate plugins: %v", err)
 	}
-	if len(instances) != 2 || publisherBus != eventBus {
+	if len(registry.Plugins()) != 2 || publisherBus != eventBus {
 		t.Fatalf("shared bus was not passed to every plugin")
 	}
 	eventBus.Seal()

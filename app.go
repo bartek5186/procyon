@@ -34,7 +34,7 @@ type application struct {
 	kratosAuth *mid.KratosAuth
 	rbac       *mid.CasbinRBAC
 	adminAuth  *mid.AdminKeyAuth
-	plugins    []coreplugins.Plugin
+	plugins    *coreplugins.Registry
 	// procyon:module-controller-fields
 	hello *controllers.HelloController
 }
@@ -71,18 +71,48 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize telemetry: %w", err)
 	}
-	installedPlugins, err := loadInstalledPlugins(context.Background(), db, logger.GetLogger(), eventBus, config)
+	observabilityClosed := false
+	defer func() {
+		if observabilityClosed {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := obs.Shutdown(ctx); err != nil {
+			logger.GetLogger().Error("telemetry shutdown failed", zap.Error(err))
+		}
+	}()
+	pluginRegistry, err := loadPlugins(context.Background(), coreplugins.Dependencies{
+		DB: db, Logger: logger.GetLogger(), Events: eventBus, Metrics: obs.BusinessMetrics(),
+	}, config)
 	if err != nil {
 		return err
 	}
+	pluginsClosed := false
+	defer func() {
+		if pluginsClosed {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := pluginRegistry.Shutdown(ctx); err != nil {
+			logger.GetLogger().Error("plugin shutdown failed", zap.Error(err))
+		}
+	}()
 
 	if migrate {
 		if err := internal.MigrateRun(db, config); err != nil {
 			return err
 		}
-		if err := migrateInstalledPlugins(context.Background(), installedPlugins); err != nil {
+		if err := pluginRegistry.Migrate(context.Background()); err != nil {
 			return err
 		}
+	}
+	if err := pluginRegistry.RegisterCapabilities(); err != nil {
+		return err
+	}
+	if err := pluginRegistry.RegisterEvents(eventBus); err != nil {
+		return err
 	}
 
 	appStore := store.NewAppStore(db, &config)
@@ -104,7 +134,7 @@ func run() error {
 
 	var rbac *mid.CasbinRBAC
 	if config.RBACEnabled() {
-		policies := append(append([]authz.Policy(nil), applicationPolicies...), installedPluginPolicies(installedPlugins)...)
+		policies := append(append([]authz.Policy(nil), applicationPolicies...), pluginRegistry.Policies()...)
 		casbinAuthz, err := authz.NewCasbinAuthorizerWithPolicies(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs, policies)
 		if err != nil {
 			return fmt.Errorf("initialize casbin: %w", err)
@@ -122,19 +152,26 @@ func run() error {
 		kratosAuth: kratosAuth,
 		rbac:       rbac,
 		adminAuth:  adminAuth,
-		plugins:    installedPlugins,
+		plugins:    pluginRegistry,
 		// procyon:module-controller-init
 		hello: controllers.NewHelloController(appService, logger.GetLogger()),
 	}
 
 	public := newPublicServer(config, obs)
-	registerPublicRoutes(public, app)
+	if err := registerPublicRoutes(public, app); err != nil {
+		return err
+	}
 
 	admin := newAdminServer()
 	registerAdminRoutes(admin, app)
 
 	upload := newUploadServer()
 	registerUploadRoutes(upload, app)
+	pluginContext, cancelPlugins := context.WithCancel(context.Background())
+	if err := pluginRegistry.Start(pluginContext); err != nil {
+		cancelPlugins()
+		return err
+	}
 
 	logger.GetLogger().Info(
 		"server starting",
@@ -165,9 +202,10 @@ func run() error {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
+	var runErr error
 	select {
 	case se := <-errs:
-		return fmt.Errorf("server %s: %w", se.name, se.err)
+		runErr = fmt.Errorf("server %s: %w", se.name, se.err)
 	case sig := <-signals:
 		logger.GetLogger().Info("shutting down", zap.String("signal", sig.String()))
 	}
@@ -180,12 +218,17 @@ func run() error {
 			logger.GetLogger().Error("shutdown failed", zap.String("server", name), zap.Error(err))
 		}
 	}
-	shutdownInstalledPlugins(shutdownCtx, installedPlugins, logger.GetLogger())
+	cancelPlugins()
+	if err := pluginRegistry.Shutdown(shutdownCtx); err != nil {
+		logger.GetLogger().Error("plugin shutdown failed", zap.Error(err))
+	}
+	pluginsClosed = true
 	if err := obs.Shutdown(shutdownCtx); err != nil {
 		logger.GetLogger().Error("telemetry shutdown failed", zap.Error(err))
 	}
+	observabilityClosed = true
 
-	return nil
+	return runErr
 }
 
 func newPublicServer(config coreconfig.Config, obs *telemetry.Manager) *echo.Echo {
