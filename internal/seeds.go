@@ -16,8 +16,7 @@ func RegisterSeeder(seeder Seeder) {
 	}
 }
 
-func runSeeders(db *gorm.DB) error {
-	ctx := context.Background()
+func runSeeders(ctx context.Context, db *gorm.DB) error {
 	for _, seeder := range seeders {
 		if err := seeder(ctx, db); err != nil {
 			return err

@@ -81,20 +81,19 @@ aktualizacji Core.
 
 ## Typowane zdarzenia modułów
 
-Aplikacja tworzy jeden typowany event bus i przekazuje go wszystkim pluginom
-projektowym i zainstalowanym. Pluginy rejestrują handlery przez `RegisterEvents`, a
-handlery należące do aplikacji są składane w `events.go`. Rejestracja zostaje
-zamknięta przed uruchomieniem tras pluginów i zadań działających w tle.
+Core tworzy jeden typowany event bus i przekazuje go aplikacji oraz wszystkim
+pluginom projektowym i zainstalowanym. Pluginy rejestrują handlery przez
+`RegisterEvents`, a handlery należące do aplikacji są składane w `events.go` i
+zwracane przez fabrykę aplikacji w `app.go`. Rejestracja zostaje zamknięta przed
+uruchomieniem tras pluginów i zadań działających w tle.
 
 Bus jest synchroniczny i celowo nie ma kolejki ani workera. Handlery muszą być
 szybkie i idempotentne. Błąd handlera przerywa publikację, dzięki czemu trwałe
 źródło, takie jak webhook płatności, może ponowić całe zdarzenie.
 
-Projekty wygenerowane przed dodaniem eventów wymagają jednorazowej zmiany w
-`app.go` i `plugins.go`: utworzenia busa, przekazania go jako
-`plugins.Dependencies.Events`, zarejestrowania handlerów aplikacji oraz wywołania
-`Seal` przed `registerPublicRoutes`. Dokładny lifecycle opisuje
-[dokumentacja Core](https://github.com/bartek5186/procyon-core/tree/main/events).
+Runtime odpowiada za utworzenie busa, kolejność rejestracji i wywołanie `Seal`.
+Dokładny lifecycle opisuje [dokumentacja
+Core](https://github.com/bartek5186/procyon-core/tree/main/events).
 
 ## Pluginy Wewnętrzne Projektu
 
