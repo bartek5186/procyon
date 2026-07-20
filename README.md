@@ -38,7 +38,7 @@ main.go
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
 - GORM `AutoMigrate` by default, with optional SQL migrations through `goose` in `internal/migrations/`
-- `scripts/generate-feature.sh` as a module skeleton generator
+- application module generation through `procyon-cli module create`
 
 ## Running
 
@@ -84,7 +84,7 @@ update only.
 Core creates one typed event bus and shares it with the application and every
 local and installed plugin. Plugins register handlers through `RegisterEvents`;
 application-owned handlers belong in `events.go` and are returned from the
-application factory in `app.go`. Registration is sealed before plugin routes
+application factory in `main.go`. Registration is sealed before plugin routes
 and background tasks start.
 
 The bus is synchronous and intentionally has no queue or worker. Handlers must
@@ -196,19 +196,19 @@ Applied goose migrations are stored in the `schema_migrations` table. You can ch
 ## Module Generator
 
 ```bash
-scripts/generate-feature.sh invoice
-scripts/generate-feature.sh invoice --with-wiring
+procyon-cli module create invoice
 ```
 
-The generator creates skeletons:
+The Procyon CLI generator creates:
 - `models/invoice_*`
 - `store/invoiceStore.go`
 - `services/invoiceService.go`
 - `controllers/invoiceController.go`
 - goose migrations for MySQL and PostgreSQL
 
-With `--with-wiring`, the generator also wires `store.AppStore` and `services.AppService`.
-After generation, manually register the controller and routes in `main.go`, then review the generated migrations.
+It also wires `store.AppStore`, `services.AppService`, the application,
+routes, auto-migration and default policies. Review the generated behavior and
+migrations, then run `go test ./...`.
 
 ## Postman Collection
 
@@ -255,8 +255,8 @@ with a clear error rather than being skipped. Process variables override `.env`
 and explicit command flags override both; API keys are never logged.
 
 The generator is versioned with `procyon-cli`, so existing projects receive
-generator fixes by updating the CLI instead of copying a new `tools/postman-gen`
-directory. It scans application routes, project-owned plugins under `plugins/`,
+generator fixes by updating the CLI; no project-local generator directory is
+needed. It scans application routes, project-owned plugins under `plugins/`,
 and installed Go plugins recorded in `.procyon.json`. Plugin routes are read
 from their `RegisterRoutes` methods and
 placed in a top-level folder named after the plugin, preserving public,

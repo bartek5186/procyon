@@ -199,13 +199,15 @@ Jeśli dodajesz nowy moduł:
 
 Nie buduj osobnego kontenera ani kolejnej warstwy abstrakcji bez wyraźnej potrzeby.
 
-Do wygenerowania początkowego szkieletu modułu można użyć:
+Do wygenerowania kompletnego szkieletu modułu użyj Procyon CLI:
 
 ```bash
-scripts/generate-feature.sh invoice
+procyon-cli module create invoice
 ```
 
-Generator tworzy pliki modeli, store, service i controller, ale celowo nie edytuje automatycznie `AppStore`, `AppService`, `main.go` ani migracji. Te miejsca są composition rootem i powinny być świadomie podpięte podczas implementacji.
+Generator tworzy modele, store, service, controller i migracje oraz podpina
+`AppStore`, `AppService`, aplikację, routing i polityki. Wygenerowane miejsca
+composition root należy przejrzeć podczas implementacji.
 
 ## 6. Typowy przepływ feature'a
 

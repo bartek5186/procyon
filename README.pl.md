@@ -38,7 +38,7 @@ main.go
 - `config/config.docker.json`
 - `Dockerfile`, `compose.yaml`, `deploy.sh`, `prod.deploy.sh`
 - domyślny GORM `AutoMigrate` i opcjonalne migracje SQL przez `goose` w `internal/migrations/`
-- `scripts/generate-feature.sh` jako generator szkieletu modułu
+- generowanie modułów aplikacji przez `procyon-cli module create`
 
 ## Uruchomienie
 
@@ -84,7 +84,7 @@ aktualizacji Core.
 Core tworzy jeden typowany event bus i przekazuje go aplikacji oraz wszystkim
 pluginom projektowym i zainstalowanym. Pluginy rejestrują handlery przez
 `RegisterEvents`, a handlery należące do aplikacji są składane w `events.go` i
-zwracane przez fabrykę aplikacji w `app.go`. Rejestracja zostaje zamknięta przed
+zwracane przez fabrykę aplikacji w `main.go`. Rejestracja zostaje zamknięta przed
 uruchomieniem tras pluginów i zadań działających w tle.
 
 Bus jest synchroniczny i celowo nie ma kolejki ani workera. Handlery muszą być
@@ -196,19 +196,19 @@ Wykonane migracje goose są zapisywane w tabeli `schema_migrations`. Nazwę tabe
 ## Generator Modułu
 
 ```bash
-scripts/generate-feature.sh invoice
-scripts/generate-feature.sh invoice --with-wiring
+procyon-cli module create invoice
 ```
 
-Generator tworzy szkielety:
+Generator Procyon CLI tworzy:
 - `models/invoice_*`
 - `store/invoiceStore.go`
 - `services/invoiceService.go`
 - `controllers/invoiceController.go`
 - migracje goose dla MySQL i PostgreSQL
 
-Z `--with-wiring` generator podpina też `store.AppStore` i `services.AppService`.
-Po wygenerowaniu trzeba ręcznie zarejestrować kontroler i routing w `main.go`, a potem sprawdzić wygenerowane migracje.
+Automatycznie podpina też `store.AppStore`, `services.AppService`, aplikację,
+routing, automigrację i domyślne polityki. Po wygenerowaniu sprawdź logikę i
+migracje, a następnie uruchom `go test ./...`.
 
 ## Kolekcja Postmana
 
@@ -257,8 +257,8 @@ błędem. Zmienne procesu mają pierwszeństwo przed `.env`, flagi przed obiema
 warstwami, a klucze API nie są wypisywane.
 
 Generator jest wersjonowany razem z `procyon-cli`, dzięki czemu starsze projekty
-dostają jego poprawki po aktualizacji CLI, bez kopiowania katalogu
-`tools/postman-gen`. Skanuje routing aplikacji, pluginy projektowe w `plugins/`
+dostają jego poprawki po aktualizacji CLI i nie potrzebują lokalnego katalogu
+generatora. Skanuje routing aplikacji, pluginy projektowe w `plugins/`
 oraz wszystkie zainstalowane pluginy Go zapisane w `.procyon.json`. Trasy
 pluginów są odczytywane z ich metod
 `RegisterRoutes`, umieszczane w głównym folderze nazwanym jak plugin i zachowują

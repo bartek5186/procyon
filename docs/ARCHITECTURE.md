@@ -44,14 +44,13 @@ plugins_gen.go    generowana rejestracja pluginów instalowanych przez CLI
 services/      use-case, logika biznesowa, integracje zewnętrzne, cron/background jobs
 store/         dostęp do danych przez GORM
 static/        statyczne pliki HTTP
-main.go        wejście procesu i flagi uruchomieniowe
-app.go         cienki composition root logiki aplikacji
+main.go        wejście procesu, flagi i cienki composition root aplikacji
 routes.go      trasy należące do aplikacji
 ```
 
 ## 3. Composition Root
 
-`app.go` jest centralnym miejscem składania logiki aplikacji. Frameworkowy
+`main.go` jest centralnym miejscem składania logiki aplikacji. Frameworkowy
 lifecycle należy do `procyon-core/runtime`; template nie kopiuje konfiguracji
 serwerów, auth, telemetry ani obsługi shutdownu.
 
@@ -64,7 +63,7 @@ Runtime przy starcie wykonuje w tej kolejności:
 5. scala fabryki z `plugins_local.go` i `plugins_gen.go`, tworzy pluginy oraz sortuje ich zależności,
 6. uruchamia migracje aplikacji i pluginów, jeśli proces dostał `-migrate=true`,
 7. rejestruje capabilities i event handlers pluginów,
-8. wywołuje fabrykę z `app.go`, która buduje `AppStore`, `AppService` i kontrolery,
+8. wywołuje fabrykę z `main.go`, która buduje `AppStore`, `AppService` i kontrolery,
 9. inicjalizuje opcjonalne auth, RBAC i admin endpoints,
 10. zbiera polityki aplikacji i pluginów,
 11. tworzy kontrolery i zakłada middleware,
@@ -203,13 +202,15 @@ Jeśli dodajesz nowy moduł:
 
 Nie buduj osobnego kontenera ani kolejnej warstwy abstrakcji bez wyraźnej potrzeby.
 
-Do wygenerowania początkowego szkieletu modułu można użyć:
+Do wygenerowania kompletnego szkieletu modułu użyj Procyon CLI:
 
 ```bash
-scripts/generate-feature.sh invoice
+procyon-cli module create invoice
 ```
 
-Generator tworzy pliki modeli, store, service i controller, ale celowo nie edytuje automatycznie `AppStore`, `AppService`, `main.go` ani migracji. Te miejsca są composition rootem i powinny być świadomie podpięte podczas implementacji.
+Generator tworzy modele, store, service, controller i migracje oraz podpina
+`AppStore`, `AppService`, aplikację, routing i polityki. Wygenerowane miejsca
+composition root należy przejrzeć podczas implementacji.
 
 ## 6. Typowy przepływ feature’a
 
