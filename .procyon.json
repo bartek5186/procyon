@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project_module": "github.com/bartek5186/procyon",
-  "template_version": "v0.5.0",
+  "template_version": "v0.5.1",
   "core_version": "v0.5.0",
   "cli_min_version": "0.5.0"
 }
