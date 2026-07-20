@@ -81,22 +81,19 @@ update only.
 
 ## Typed Module Events
 
-The application creates one typed event bus and shares it with every local and
-installed plugin. Plugins register handlers through `RegisterEvents`;
-application-owned
-handlers belong in `events.go`. Registration is sealed before plugin routes and
-background tasks start.
+Core creates one typed event bus and shares it with the application and every
+local and installed plugin. Plugins register handlers through `RegisterEvents`;
+application-owned handlers belong in `events.go` and are returned from the
+application factory in `app.go`. Registration is sealed before plugin routes
+and background tasks start.
 
 The bus is synchronous and intentionally has no queue or worker. Handlers must
 be fast and idempotent. If a handler fails, the publishing operation fails so a
 durable source such as a payment webhook can retry it.
 
-Projects generated before typed events need a one-time wiring update in
-`app.go` and `plugins.go`: create the bus, pass it as
-`plugins.Dependencies.Events`, register application handlers and call `Seal`
-before `registerPublicRoutes`. See the
-[Core event guide](https://github.com/bartek5186/procyon-core/tree/main/events)
-for the exact lifecycle.
+The runtime owns bus creation, registration order and sealing. See the [Core
+event guide](https://github.com/bartek5186/procyon-core/tree/main/events) for
+the exact lifecycle.
 
 ## Project-owned Plugins
 

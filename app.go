@@ -2,279 +2,61 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	"github.com/bartek5186/procyon-core/apierr"
 	"github.com/bartek5186/procyon-core/authz"
-	coreconfig "github.com/bartek5186/procyon-core/config"
 	coreevents "github.com/bartek5186/procyon-core/events"
-	"github.com/bartek5186/procyon-core/logging"
-	mid "github.com/bartek5186/procyon-core/middleware"
 	coreplugins "github.com/bartek5186/procyon-core/plugins"
-	"github.com/bartek5186/procyon-core/telemetry"
-	"github.com/bartek5186/procyon-core/validation"
+	coreruntime "github.com/bartek5186/procyon-core/runtime"
 	"github.com/bartek5186/procyon/controllers"
 	"github.com/bartek5186/procyon/internal"
 	"github.com/bartek5186/procyon/internal/i18n"
 	"github.com/bartek5186/procyon/services"
 	"github.com/bartek5186/procyon/store"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-	"go.uber.org/zap"
 )
 
 type application struct {
-	obs        *telemetry.Manager
-	kratosAuth *mid.KratosAuth
-	rbac       *mid.CasbinRBAC
-	adminAuth  *mid.AdminKeyAuth
-	plugins    *coreplugins.Registry
 	// procyon:module-controller-fields
 	hello *controllers.HelloController
 }
 
 func run() error {
-	logger := logging.NewLogger()
-
 	if err := i18n.LoadTranslations(); err != nil {
-		logger.GetLogger().Fatal("failed to load translations", zap.Error(err))
+		return fmt.Errorf("load translations: %w", err)
 	}
 
-	if configPath == "" {
-		configPath = "config/config.json"
-	}
+	return coreruntime.Run(context.Background(), coreruntime.Options{
+		Version:         appVersion,
+		ConfigPath:      configPath,
+		StaticDir:       "static",
+		DefaultLanguage: "pl",
+		Migrate:         migrate,
+		PluginRegistrations: append(
+			append([]coreplugins.Registration(nil), localPluginFactories()...),
+			installedPluginFactories()...,
+		),
+		MigrateApplication: func(ctx context.Context, dependencies coreruntime.Dependencies) error {
+			return internal.MigrateRun(ctx, dependencies.DB, dependencies.Config)
+		},
+		NewApplication: newApplication,
+	})
+}
 
-	config, err := coreconfig.Read(configPath)
-	if err != nil {
-		return err
-	}
-	obsConfig := config.Observability.WithDefaults(appVersion, config.AppName, config.Prod)
-	logger = logging.NewLoggerWithConfig(
-		config.Logging,
-		zap.String("service", obsConfig.ServiceName),
-		zap.String("env", obsConfig.Environment),
-		zap.String("version", obsConfig.ServiceVersion),
-	)
-	eventBus := coreevents.New()
-
-	db, err := coreconfig.Connect(config)
-	if err != nil {
-		return err
-	}
-	obs, err := telemetry.New(context.Background(), obsConfig, logger.GetLogger(), db)
-	if err != nil {
-		return fmt.Errorf("initialize telemetry: %w", err)
-	}
-	observabilityClosed := false
-	defer func() {
-		if observabilityClosed {
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := obs.Shutdown(ctx); err != nil {
-			logger.GetLogger().Error("telemetry shutdown failed", zap.Error(err))
-		}
-	}()
-	pluginRegistry, err := loadPlugins(context.Background(), coreplugins.Dependencies{
-		DB: db, Logger: logger.GetLogger(), Events: eventBus, Metrics: obs.BusinessMetrics(),
-	}, config)
-	if err != nil {
-		return err
-	}
-	pluginsClosed := false
-	defer func() {
-		if pluginsClosed {
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := pluginRegistry.Shutdown(ctx); err != nil {
-			logger.GetLogger().Error("plugin shutdown failed", zap.Error(err))
-		}
-	}()
-
-	if migrate {
-		if err := internal.MigrateRun(db, config); err != nil {
-			return err
-		}
-		if err := pluginRegistry.Migrate(context.Background()); err != nil {
-			return err
-		}
-	}
-	if err := pluginRegistry.RegisterCapabilities(); err != nil {
-		return err
-	}
-	if err := pluginRegistry.RegisterEvents(eventBus); err != nil {
-		return err
-	}
-
-	appStore := store.NewAppStore(db, &config)
-	appService := services.NewAppService(appStore, logger.GetLogger(), obs.BusinessMetrics())
-	if err := registerApplicationEventHandlers(eventBus, appService); err != nil {
-		return fmt.Errorf("register application event handlers: %w", err)
-	}
-	eventBus.Seal()
-
-	var kratosAuth *mid.KratosAuth
-	if config.AuthEnabled() {
-		switch config.AuthProvider() {
-		case "kratos":
-			kratosAuth = mid.NewKratosAuth(config.AuthBaseURL())
-		default:
-			return fmt.Errorf("unsupported auth provider %q", config.AuthProvider())
-		}
-	}
-
-	var rbac *mid.CasbinRBAC
-	if config.RBACEnabled() {
-		policies := append(append([]authz.Policy(nil), applicationPolicies...), pluginRegistry.Policies()...)
-		casbinAuthz, err := authz.NewCasbinAuthorizerWithPolicies(db, config.RBAC.DefaultRole, config.RBAC.AdminIdentityIDs, policies)
-		if err != nil {
-			return fmt.Errorf("initialize casbin: %w", err)
-		}
-		rbac = mid.NewCasbinRBAC(casbinAuthz)
-	}
-
-	var adminAuth *mid.AdminKeyAuth
-	if config.AdminEnabled() {
-		adminAuth = mid.NewAdminKeyAuth(config.Admin.SecretKey)
-	}
-
+func newApplication(_ context.Context, dependencies coreruntime.Dependencies) (coreruntime.Application, error) {
+	appStore := store.NewAppStore(dependencies.DB, &dependencies.Config)
+	appService := services.NewAppService(appStore, dependencies.Logger, dependencies.Metrics)
 	app := &application{
-		obs:        obs,
-		kratosAuth: kratosAuth,
-		rbac:       rbac,
-		adminAuth:  adminAuth,
-		plugins:    pluginRegistry,
 		// procyon:module-controller-init
-		hello: controllers.NewHelloController(appService, logger.GetLogger()),
+		hello: controllers.NewHelloController(appService, dependencies.Logger),
 	}
 
-	public := newPublicServer(config, obs)
-	if err := registerPublicRoutes(public, app); err != nil {
-		return err
-	}
-
-	admin := newAdminServer()
-	registerAdminRoutes(admin, app)
-
-	upload := newUploadServer()
-	registerUploadRoutes(upload, app)
-	pluginContext, cancelPlugins := context.WithCancel(context.Background())
-	if err := pluginRegistry.Start(pluginContext); err != nil {
-		cancelPlugins()
-		return err
-	}
-
-	logger.GetLogger().Info(
-		"server starting",
-		zap.String("app", config.AppName),
-		zap.String("public", config.PublicAddress()),
-		zap.String("admin", config.AdminAddress()),
-		zap.String("upload", config.UploadAddress()),
-		zap.Bool("migrate", migrate),
-	)
-
-	type serverErr struct {
-		name string
-		err  error
-	}
-	errs := make(chan serverErr, 3)
-	startServer := func(name, addr string, e *echo.Echo) {
-		go func() {
-			if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				errs <- serverErr{name, err}
-			}
-		}()
-	}
-	startServer("public", config.PublicAddress(), public)
-	startServer("admin", config.AdminAddress(), admin)
-	startServer("upload", config.UploadAddress(), upload)
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
-
-	var runErr error
-	select {
-	case se := <-errs:
-		runErr = fmt.Errorf("server %s: %w", se.name, se.err)
-	case sig := <-signals:
-		logger.GetLogger().Info("shutting down", zap.String("signal", sig.String()))
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	for name, e := range map[string]*echo.Echo{"public": public, "admin": admin, "upload": upload} {
-		if err := e.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.GetLogger().Error("shutdown failed", zap.String("server", name), zap.Error(err))
-		}
-	}
-	cancelPlugins()
-	if err := pluginRegistry.Shutdown(shutdownCtx); err != nil {
-		logger.GetLogger().Error("plugin shutdown failed", zap.Error(err))
-	}
-	pluginsClosed = true
-	if err := obs.Shutdown(shutdownCtx); err != nil {
-		logger.GetLogger().Error("telemetry shutdown failed", zap.Error(err))
-	}
-	observabilityClosed = true
-
-	return runErr
-}
-
-func newPublicServer(config coreconfig.Config, obs *telemetry.Manager) *echo.Echo {
-	e := newBaseServer()
-	e.Server.ReadTimeout = 15 * time.Second
-	e.Server.WriteTimeout = 30 * time.Second
-	e.Server.IdleTimeout = 60 * time.Second
-
-	e.Use(mid.LanguageMiddleware("pl", config.Languages))
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins:     config.Domains,
-		AllowMethods:     []string{echo.GET, echo.POST, echo.PUT, echo.PATCH, echo.DELETE, echo.OPTIONS},
-		AllowCredentials: true,
-	}))
-	e.Use(obs.Middleware())
-
-	return e
-}
-
-func newAdminServer() *echo.Echo {
-	e := newBaseServer()
-	e.Server.ReadTimeout = 30 * time.Second
-	e.Server.WriteTimeout = 30 * time.Second
-	e.Server.IdleTimeout = 30 * time.Second
-
-	return e
-}
-
-func newUploadServer() *echo.Echo {
-	e := newBaseServer()
-	e.Server.ReadTimeout = 10 * time.Minute
-	e.Server.WriteTimeout = 10 * time.Minute
-	e.Server.IdleTimeout = 120 * time.Second
-
-	return e
-}
-
-func newBaseServer() *echo.Echo {
-	e := echo.New()
-	e.HideBanner = true
-	e.HTTPErrorHandler = apierr.Handler(logging.NewLogger().GetLogger())
-	e.Validator = validation.NewInputValidator()
-	e.Server.ReadHeaderTimeout = 5 * time.Second
-
-	e.Use(middleware.RequestID())
-	e.Use(middleware.Recover())
-
-	return e
+	return coreruntime.Application{
+		RegisterEvents: func(eventBus *coreevents.Bus) error {
+			return registerApplicationEventHandlers(eventBus, appService)
+		},
+		Policies: func() []authz.Policy {
+			return applicationPolicies
+		},
+		RegisterRoutes: app.registerRoutes,
+	}, nil
 }

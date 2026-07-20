@@ -24,7 +24,9 @@ Każda warstwa ma wąski zakres odpowiedzialności:
 - `models/` przechowuje encje GORM, DTO wejścia/wyjścia i mapowanie danych.
 - `procyon-core` zawiera konfigurację, logger, walidator, middleware, auth,
   błędy API i telemetry aktualizowane przez moduł Go.
-- `internal/` zawiera prywatne elementy aplikacji, takie jak i18n i migracje.
+- `internal/` zawiera prywatne elementy aplikacji, takie jak i18n, modele
+  migracji, osadzone pliki SQL i seedery. Mechanizm wykonawczy migracji należy
+  do `procyon-core/migrations`.
 
 Najważniejsza reguła: nie mieszaj odpowiedzialności między warstwami.
 
@@ -42,14 +44,18 @@ plugins_gen.go    generowana rejestracja pluginów instalowanych przez CLI
 services/      use-case, logika biznesowa, integracje zewnętrzne, cron/background jobs
 store/         dostęp do danych przez GORM
 static/        statyczne pliki HTTP
-main.go        composition root: składanie aplikacji, routing, middleware, start
+main.go        wejście procesu i flagi uruchomieniowe
+app.go         cienki composition root logiki aplikacji
+routes.go      trasy należące do aplikacji
 ```
 
 ## 3. Composition Root
 
-`main.go` jest jedynym centralnym miejscem składania aplikacji.
+`app.go` jest centralnym miejscem składania logiki aplikacji. Frameworkowy
+lifecycle należy do `procyon-core/runtime`; template nie kopiuje konfiguracji
+serwerów, auth, telemetry ani obsługi shutdownu.
 
-Przy starcie aplikacja robi w tej kolejności:
+Runtime przy starcie wykonuje w tej kolejności:
 
 1. ładuje translacje i konfigurację,
 2. nakłada override'y z env i waliduje konfigurację,
@@ -58,7 +64,7 @@ Przy starcie aplikacja robi w tej kolejności:
 5. scala fabryki z `plugins_local.go` i `plugins_gen.go`, tworzy pluginy oraz sortuje ich zależności,
 6. uruchamia migracje aplikacji i pluginów, jeśli proces dostał `-migrate=true`,
 7. rejestruje capabilities i event handlers pluginów,
-8. buduje `AppStore` i `AppService` oraz rejestruje event handlers aplikacji,
+8. wywołuje fabrykę z `app.go`, która buduje `AppStore`, `AppService` i kontrolery,
 9. inicjalizuje opcjonalne auth, RBAC i admin endpoints,
 10. zbiera polityki aplikacji i pluginów,
 11. tworzy kontrolery i zakłada middleware,
