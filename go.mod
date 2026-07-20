@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.2
 
 require (
-	github.com/bartek5186/procyon-core v0.5.0
+	github.com/bartek5186/procyon-core v0.6.0
 	github.com/labstack/echo/v4 v4.13.4
 	go.opentelemetry.io/otel v1.36.0
 	go.uber.org/zap v1.27.1
@@ -48,6 +48,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/ory/client-go v1.22.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pressly/goose/v3 v3.24.3 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
