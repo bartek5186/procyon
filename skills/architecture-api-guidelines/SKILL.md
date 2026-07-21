@@ -36,7 +36,7 @@ Najważniejsza reguła: nie mieszaj odpowiedzialności między warstwami.
 ```text
 config/        konfiguracja JSON i pliki credentials
 controllers/   handlery Echo i mapowanie HTTP <-> service
-internal/      config, logger, middleware, validator, i18n, migracje, helpers
+internal/      prywatne authz, i18n, migracje i helpery aplikacji
 models/        encje GORM, input/output DTO, mapery
 plugins/       prywatne bounded contexty kompilowane razem z aplikacją
 plugins_local.go  rejestracja pluginów należących do projektu

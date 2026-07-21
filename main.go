@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/bartek5186/procyon-core/authz"
+	coreauthz "github.com/bartek5186/procyon-core/authz"
 	coreevents "github.com/bartek5186/procyon-core/events"
 	coreplugins "github.com/bartek5186/procyon-core/plugins"
 	coreruntime "github.com/bartek5186/procyon-core/runtime"
 	"github.com/bartek5186/procyon/controllers"
 	"github.com/bartek5186/procyon/internal"
+	appauthz "github.com/bartek5186/procyon/internal/authz"
 	"github.com/bartek5186/procyon/internal/i18n"
 	"github.com/bartek5186/procyon/services"
 	"github.com/bartek5186/procyon/store"
@@ -75,8 +76,8 @@ func newApplication(_ context.Context, dependencies coreruntime.Dependencies) (c
 		RegisterEvents: func(eventBus *coreevents.Bus) error {
 			return registerApplicationEventHandlers(eventBus, appService)
 		},
-		Policies: func() []authz.Policy {
-			return applicationPolicies
+		Policies: func() []coreauthz.Policy {
+			return appauthz.Policies()
 		},
 		RegisterRoutes: app.registerRoutes,
 	}, nil

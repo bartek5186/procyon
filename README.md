@@ -17,7 +17,6 @@ models/
 plugins/
 plugins_local.go
 plugins_gen.go
-policies.go
 services/
 static/
 store/
@@ -28,7 +27,7 @@ main.go
 
 - versioned `github.com/bartek5186/procyon-core` dependency with configuration,
   database, logging, telemetry, API errors, validation, auth and middleware
-- application-owned Casbin policies in `policies.go`
+- application-owned Casbin roles and policies in `internal/authz/`
 - `internal/i18n/` with a simple translation loader
 - `models.HelloMessage` as an example model
 - `HelloController`, `HelloService`, `HelloStore`

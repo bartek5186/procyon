@@ -53,12 +53,12 @@ casbin_rule
 
 The app seeds base policies on startup when RBAC is enabled.
 
-Application policies live in `policies.go`:
+Application policies live in `internal/authz/policies.go`:
 
 ```go
-var applicationPolicies = []authz.Policy{
-    {Role: authz.RoleUser, Domain: "*", Object: "hello", Action: "read"},
-    {Role: authz.RoleAdmin, Domain: "*", Object: "hello", Action: "manage"},
+var applicationPolicies = []coreauthz.Policy{
+    {Role: coreauthz.RoleUser, Domain: "*", Object: "hello", Action: "read"},
+    {Role: coreauthz.RoleAdmin, Domain: "*", Object: "hello", Action: "manage"},
 }
 ```
 
@@ -70,12 +70,12 @@ This means:
 
 ## Adding Policies
 
-Add domain policies in `policies.go`:
+Add domain policies in `internal/authz/policies.go`:
 
 ```go
-var applicationPolicies = []authz.Policy{
-    {Role: authz.RoleUser, Domain: "*", Object: "reports", Action: "read"},
-    {Role: authz.RoleAdmin, Domain: "*", Object: "reports", Action: "manage"},
+var applicationPolicies = []coreauthz.Policy{
+    {Role: coreauthz.RoleUser, Domain: "*", Object: "reports", Action: "read"},
+    {Role: coreauthz.RoleAdmin, Domain: "*", Object: "reports", Action: "manage"},
 }
 ```
 

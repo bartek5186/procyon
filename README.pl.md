@@ -17,7 +17,6 @@ models/
 plugins/
 plugins_local.go
 plugins_gen.go
-policies.go
 services/
 static/
 store/
@@ -28,7 +27,7 @@ main.go
 
 - wersjonowana zależność `github.com/bartek5186/procyon-core` z konfiguracją,
   bazą, loggerem, telemetry, błędami API, walidacją, auth i middleware
-- polityki Casbina należące do aplikacji w `policies.go`
+- role i polityki Casbina należące do aplikacji w `internal/authz/`
 - `internal/i18n/` z prostym loaderem tłumaczeń
 - `models.HelloMessage` jako przykładowy model
 - `HelloController`, `HelloService`, `HelloStore`
